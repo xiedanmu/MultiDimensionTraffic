@@ -194,10 +194,14 @@ class AlgorithmInterfaceImpl(AlgorithmInterface):
         real_cuml = trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][6] + ratio * (
                 trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos + 1][6] -
                 trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][6])
-        real_yaw = trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][7] + ratio * (
-                trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos + 1][7] -
-                trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][7])
 
+        '''yaw角从2Π跳到0或者从0跳到2Π会出现转圈的现象，需要做一个判断'''
+        if abs(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos + 1][7]-trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][7])>3.14/2:
+            real_yaw=trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos + 1][7]
+        else:
+            real_yaw = trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][7] + ratio * (
+                    trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos + 1][7] -
+                    trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][7])
         return (real_x, real_y, lane_id, real_s, real_l, real_cums, real_cuml, real_yaw), pos
 
     # 给定两条线段（表示为起点start = {X1, Y1}和终点end = {X2, Y2}），如果它们有交点，请计算其交点，没有交点则返回空值。

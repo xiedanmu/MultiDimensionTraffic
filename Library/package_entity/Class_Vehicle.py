@@ -34,12 +34,15 @@ class Vehicle:
         self.located_area = LocatedArea.NORMAL
         self.is_xy_v_updated_lastT=True
         self.random_coefficients=rng.integers(0,10)
+        self.lane_is_changed= True
+
 
         self.going_to_update_acc=None
         self.going_to_update_speed=None
         self.going_to_update_x=None
         self.going_to_update_y=None
         self.going_to_update_yaw=None
+        self.going_to_update_Route=None
 
     def set_speed(self, speed):
         self.current_speed = speed

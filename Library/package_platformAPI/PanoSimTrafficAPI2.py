@@ -678,6 +678,25 @@ def mySetValidRoute(vehID, printFlag=False):
         print("SetRoute", dir)
     return True
 
+def myTranslateDirectionToRoute(direction):
+    if direction.value==0:
+        translate_value=0
+    elif direction.value==1:
+        translate_value=-1
+    elif direction.value==2:
+        translate_value = 1
+    elif direction.value==3:
+        translate_value = 2
+    return route_type(translate_value)
+
+def myTranslateIntTodirection(value):
+    return direction_type(value)
+
+def myTranslateIntTo_next_junction_direction(value):
+    return next_junction_direction(value)
+
+def myTranslateIntToVehicleType(value):
+    return vehicle_type(value)
 
 def myGetRandomDouble(min, max):
     rand = random.ranf()
@@ -834,7 +853,7 @@ def myGetVehicleRoute(id):
     return getRoute(id)
 
 
-def myChangeRoute(id, myLaneRute):
+def myChangeRoute(id, route):
     return changeRoute(id, route)
 
 

@@ -100,6 +100,8 @@ def update_trajectory_for_all(MultiThreadPool):
         except KeyError:
             log.error("KeyError: 没有在Dao中找到这条路 {}".format(current_lane_id)) # 例如这种路(':gneJ0_0_2',)就不在Dao中
         else:
+            if vehicle.current_lane!=current_lane:#vehicle.current_lane是上一个仿真步的Lane
+                vehicle.lane_is_changed=True #设置Route需要用到的
 
             # # 特殊逻辑，应对3车道变两车道
             # if not PanoSimTrafficAPI2.myIsDeadEnd(current_lane_id) and not current_lane.next_lane and vehicle.driving_mode==DrivingMode.FOLLOW_DRIVING:
@@ -211,6 +213,30 @@ def update_location_data_each(vehicle, queue):
     # 用新的速度得到的s去轨迹中找到离之最近的点，用这个点来更新当前位置
     (x, y, laneid, s, l, cums, cuml, yaw) = MotivateInterface.pop_point_in_trajectory(vehicle, trajectory)
 
+    if vehicle.going_to_update_Route == None:
+        ValidDirections=PanoSimTrafficAPI2.myGetValidDirections(vehicle.current_lane.id)
+        if len(ValidDirections)==0:
+            vehicle.going_to_update_Route = PanoSimTrafficAPI2.myTranslateDirectionToRoute(PanoSimTrafficAPI2.myTranslateIntTo_next_junction_direction(0))
+        else:
+            vehicle.going_to_update_Route = PanoSimTrafficAPI2.myTranslateDirectionToRoute(rng.choice(ValidDirections))
+        vehicle.lane_is_changed = False
+
+    elif vehicle.lane_is_changed:
+        # direction=TrafficInterface.get_direction_from_lane_to_lane(vehicle.current_lane.id,laneid)
+        # vehicle.going_to_update_Route = PanoSimTrafficAPI2.myTranslateDirectionToRoute(direction)
+        if vehicle.current_lane.type==TypesOfRoad.INTERNAL_LANE:
+            vehicle.lane_is_changed = False
+
+        else:
+            ValidDirections = PanoSimTrafficAPI2.myGetValidDirections(vehicle.current_lane.id)
+            if len(ValidDirections) == 0:
+                vehicle.going_to_update_Route = PanoSimTrafficAPI2.myTranslateDirectionToRoute(
+                    PanoSimTrafficAPI2.myTranslateIntTo_next_junction_direction(0))
+            else:
+                vehicle.going_to_update_Route = PanoSimTrafficAPI2.myTranslateDirectionToRoute(
+                    rng.choice(ValidDirections))
+            vehicle.lane_is_changed = False
+
     vehicle.going_to_update_x=x
     vehicle.going_to_update_y=y
     vehicle.going_to_update_yaw=yaw
@@ -241,24 +267,35 @@ def update_location_data_each(vehicle, queue):
     #     Dao.vehicle_dictionary[vehicle.id] = vehicle
 
 
-def submit_location_data_for_all():
+def submit_location_data_for_all(userdata):
+    len_of_start_in_submit_location_data = len(Dao.vehicle_dictionary)
+    count=0
+
     for vehicle in Dao.vehicle_dictionary.values():
         if vehicle.is_xy_v_updated_lastT is True:
+            count+=1
             continue
         vehicle.set_acceleration(vehicle.going_to_update_acc)
         vehicle.set_speed(vehicle.going_to_update_speed)
         PanoSimTrafficAPI2.myChangeSpeed(vehicle.id, vehicle.current_speed, 0)  # todo 这里的第三个参数设为0和1有什么直观区别
+        PanoSimTrafficAPI2.myChangeRoute(vehicle.id, vehicle.going_to_update_Route)
         MotivateInterface.move_to(vehicle.id, vehicle.going_to_update_x, vehicle.going_to_update_y, vehicle.going_to_update_yaw)
+
         vehicle.current_X = vehicle.going_to_update_x
         vehicle.current_Y = vehicle.going_to_update_y
         vehicle.current_Yaw = vehicle.going_to_update_yaw
+        vehicle.current_Route=vehicle.going_to_update_Route
         vehicle.is_xy_v_updated_lastT = True
 
+        count += 1
+
+    # if count==len_of_start_in_submit_location_data:
+    #     print('All car have been processed  in this time step')
 
 def run_main(userdata, MultiThreadPool):
     log.info("main begin")
     log.info("update_vehicle_num_in_world begin")
-    #TrafficInterface.vehicle_generation(generateMode=0, initial_density=10, arrivePossible=0.5)
+    TrafficInterface.vehicle_generation(generateMode=1, initial_density=userdata["VehicleDensity"], arrivePossible=2) #arrivePossible表示每秒钟有几个车进来
 
     log.info("update_trajectory_for_all begin")
     # flag=check_no_last_step_trajectory_calculation()
@@ -277,8 +314,8 @@ def run_main(userdata, MultiThreadPool):
     update_trajectory_for_all(MultiThreadPool)
     log.info("updata_location_for_all begin")
     updata_location_data_for_all()
-    submit_location_data_for_all()
-    # generate_data_in_excel(userdata) # 生成CSV数据使用
+    submit_location_data_for_all(userdata)
+    #generate_data_in_excel(userdata) # 生成CSV数据使用
 
 def generate_data_in_excel(userdata):
     log.info("generate data in excel")
@@ -292,6 +329,7 @@ def generate_data_in_excel(userdata):
         driving_mode = vehicle.driving_mode
         is_calculate = vehicle.is_calculate_trajectory
         curLane = PanoSimTrafficAPI2.myGetVehicleLane(vehicle.id)
+        curRoute= PanoSimTrafficAPI2.myGetRoute(vehicle.id)
         curYaw = PanoSimTrafficAPI2.myGetVehicleYaw(vehicle.id)
         curS = PanoSimTrafficAPI2.myGetDistanceFromLaneStart(vehicle.id)
         curX = PanoSimTrafficAPI2.myGetVehicleX(vehicle.id)
@@ -307,6 +345,7 @@ def generate_data_in_excel(userdata):
                                      driving_mode,
                                      is_calculate,
                                      curLane,
+                                     curRoute,
                                      curX,
                                      curY,
                                      curYaw,
@@ -398,7 +437,7 @@ def run_main_old(userdata):
 
 
 def output_vehicle_data_file():
-    column = ["time", "id", "driving_mode", "is_calculate", "lane", 'x', "y", "yaw", "leader_car", "left_leader_car",
+    column = ["time", "id", "driving_mode", "is_calculate", "lane", "cur_Route",'x', "y", "yaw", "leader_car", "left_leader_car",
               "right_leader_car", "pos", 'off',
               "speed", "acc"]
     df = pd.DataFrame(g_listSaveTrajectory, columns=column)

@@ -558,9 +558,11 @@ class TrafficInterfaceImpl(TrafficInterface):
     # initial Density = 0, 初始全路网（不含内部车道）的车辆密度，需要转化为车辆数目：（密度 * 道路长度 /（车辆长度 + 2）后取整，均匀分布到正常车道）
     # arrivePossible = 0，对应于开放性边界条件下车辆进入路网的可能性，
 
-    target_lane_id_list = [] #需要存内存的数据
+    target_lane_id_list_initially = [] #需要存内存的数据
+    target_lane_id_list_per_step=[]
     total_lane_length = 0   #需要存内存的数据
     initial_done=0
+    max_vehicle_num=99
     @classmethod
     def vehicle_generation(cls, generateMode=0, initial_density=0, arrivePossible=0):
         """
@@ -586,21 +588,39 @@ class TrafficInterfaceImpl(TrafficInterface):
 
             raise NotImplementedError
 
-        def get_target_lanes():
+        def get_target_lanes_initially():
             """
             用途:计算全地图不是dead end的normal lane的条数
             """
-            if cls.target_lane_id_list==[]:
+            if cls.target_lane_id_list_initially==[]:
+                for lane in Dao.lane_dictionary.values():
+                    if lane.type == TypesOfRoad.NORMAL_LANE: #禁止deadend
+                        cls.target_lane_id_list_initially.append(lane.id)
+            return cls.target_lane_id_list_initially
+
+        def get_target_lanes_each_step():
+            """
+            用途:计算全地图不是dead end的normal lane的条数
+            """
+            if cls.target_lane_id_list_per_step==[]:
                 for lane in Dao.lane_dictionary.values():
                     if lane.type == TypesOfRoad.NORMAL_LANE and not PanoSimTrafficAPI2.myIsDeadEnd(lane.id) and len(Dao.lane_dictionary[lane.id].previous_lane)==0: #禁止deadend
-                        cls.target_lane_id_list.append(lane.id)
-            return copy.copy(cls.target_lane_id_list)
+                        cls.target_lane_id_list_per_step.append(lane.id)
 
-        def convert_to_vehicles_initially(num):
+                if cls.target_lane_id_list_per_step==[]:
+                    for lane in Dao.lane_dictionary.values():
+                        if lane.type == TypesOfRoad.NORMAL_LANE:  # 禁止deadend
+                            cls.target_lane_id_list_per_step.append(lane.id)
+
+            return cls.target_lane_id_list_per_step
+
+        def convert_to_vehicles_initially(num,total_length):
             # x = 0
             # y = 0
-            current_l=0
-            target_lane_id_list_temp=get_target_lanes()
+            if num>=cls.max_vehicle_num:
+                num=cls.max_vehicle_num
+            current_l=rng.integers(1,4)
+            target_lane_id_list_temp=get_target_lanes_initially()
             num_of_vehicle_now = len(Dao.vehicle_dictionary)
             if num > num_of_vehicle_now:
                 index=0
@@ -608,60 +628,72 @@ class TrafficInterfaceImpl(TrafficInterface):
                 for i in range(num - num_of_vehicle_now):
                     if current_l> PanoSimTrafficAPI2.myGetLaneLength(target_lane_id):
                         index += 1
+                        current_l = rng.integers(2, 10)
+                        if index >= len(target_lane_id_list_temp):
+                            index = 0
+                            current_l = 0
+
                     target_lane_id = target_lane_id_list_temp[index]
-                    (x,y)=cls.getXYFromSL(target_lane_id,current_l,0)
-                    PanoSimTrafficAPI2.myAddVehicle(x, y, speed=0, type=0, shape=0, driver=0)
-                    index+=1
-                    if index >= len(target_lane_id_list_temp):
-                        index=0
-                        current_l += 12
+                    try:
+                        (x, y) = cls.getXYFromSL(target_lane_id, current_l, 0)
+                        PanoSimTrafficAPI2.myAddVehicle(x, y, speed=0, type=rng.integers(0, 4), shape=0, driver=0)
+                    except:
+                        print('can\'t calculate x and y or something wrong with AddVehicle ')
+                    else:
+                        current_l+=total_length/rng.integers(num,num+10)
+                        # if index >= len(target_lane_id_list_temp):
+                        #     index=0
+                        #     current_l = 0
 
         def convert_to_vehicles_per_step(num):
             current_l = 0
-            target_lane_id_list_temp = get_target_lanes()
+            target_lane_id_list_temp = get_target_lanes_each_step()
             num_of_vehicle_now = len(Dao.vehicle_dictionary)
+            if num>=cls.max_vehicle_num:
+                num=cls.max_vehicle_num
             if num > num_of_vehicle_now:
-                index = rng.integers(0,len(target_lane_id_list_temp)-1)
+                index = rng.integers(0,len(target_lane_id_list_temp))
                 target_lane_id = target_lane_id_list_temp[index]
                 for i in range(num - num_of_vehicle_now):
                     if current_l > PanoSimTrafficAPI2.myGetLaneLength(target_lane_id):
                         index += 1
+                        current_l=0
                     target_lane_id = target_lane_id_list_temp[index]
                     (x, y) = cls.getXYFromSL(target_lane_id, current_l, 0)
-                    PanoSimTrafficAPI2.myAddVehicle(x, y, speed=0, type=0, shape=0, driver=0)
+                    PanoSimTrafficAPI2.myAddVehicle(x, y, speed=0, type=rng.integers(0,4), shape=0, driver=0)
                     index += 1
                     if index >= len(target_lane_id_list_temp):
                         index = 0
-                        current_l += 12
+                        current_l += total_length/10/initial_density+rng.integers(0,3)
 
         def convert_to_vehicles_in_possibility():
             current_l=0
-            target_lane_id_list=get_target_lanes()
+            target_lane_id_list=get_target_lanes_each_step()
             target_lane_id = rng.choice(target_lane_id_list)
             (x,y)=cls.getXYFromSL(target_lane_id,current_l,0)
-            PanoSimTrafficAPI2.myAddVehicle(x, y, speed=0, type=0, shape=0, driver=0)
+            PanoSimTrafficAPI2.myAddVehicle(x, y, speed=0, type=rng.integers(0,4), shape=0, driver=0)
 
 
         if generateMode==0: #开发性边界条件
             if cls.initial_done==0:
                 total_length = evaluate_total_length()
                 num = int(total_length/1000 * initial_density)
-                convert_to_vehicles_initially(num)
+                convert_to_vehicles_initially(num,total_length)
                 cls.initial_done = 1
             elif cls.initial_done==1:
                 n=rng.random() #生成0到1之间的浮点数
-                if arrivePossible>1:
-                    print('arrivePossible 只能介于0和1之间')
-                    raise ValueError
+                # if arrivePossible>1:
+                #     print('arrivePossible 只能介于0和1之间')
+                #     raise ValueError
                 if n<arrivePossible/100: #一秒钟之内有arrivePossible这么大的可能性进车，10ms一个仿真步
                     convert_to_vehicles_in_possibility()
                 pass
             return
         elif generateMode==1: #周期性边界条件
             if cls.initial_done == 0:
-                total_length=evaluate_total_length()
+                total_length = evaluate_total_length()
                 num=int(total_length/1000*initial_density)
-                convert_to_vehicles_initially(num)
+                convert_to_vehicles_initially(num,total_length)
                 cls.initial_done = 1
             elif cls.initial_done==1:
                 total_length = evaluate_total_length()

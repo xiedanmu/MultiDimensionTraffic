@@ -2,6 +2,10 @@ import math
 # import random
 # random.seed(1)
 import numpy as np
+
+from Library.package_entity.Class_Internal_Lane import InternalLane
+from Library.package_entity.Class_Lane import Lane
+
 rng = np.random.Generator(np.random.MT19937(1))
 
 from Library.package_platformAPI import PanoSimTrafficAPI2
@@ -60,100 +64,8 @@ class MotivateInterfaceImpl(MotivateInterface):
 
             if current_lane.type == TypesOfRoad.INTERNAL_LANE:  # 现在判断lane的类型除了lane类中的type字段外，还可以用类本身是不是internal_lane
 
-                # print("Internal [",vehicle.id, "] is on ", current_lane_id)
-                s = myGetDistanceFromLaneStart(vehicle.id)
-                # 只判断最近的车的写法
-                potential_foe_vehicles_inter_s = []  # {冲突车，冲突车交点距离，当前车到交点距离}
+                return cls.crossroad_game_model_old(vehicle, trajectory, current_lane)
 
-                # 只用计算前方三条冲突路需要用到 ，但是只计算三条不够
-                i=3
-                calculate_count=0
-                for foe_lane_type_points_s_item in current_lane.foe_lane_type_points_s:
-                    #只用计算前方三条冲突路
-                    # calculate_count=calculate_count+1
-                    # if calculate_count>=3:
-                    #     break
-
-                    if s < foe_lane_type_points_s_item[3]:
-                        real_foe_car = None  # temp变量
-                        rest_foe_s = 0  # foe车到交点的距离加上车身长度
-                        foe_s = 0   # 交点的s值
-
-                        foe_lane_id = foe_lane_type_points_s_item[0]
-                        foe_lane = Dao.lane_dictionary[foe_lane_id]
-                        foe_cars = PanoSimTrafficAPI2.myGetLaneVehicles(foe_lane_id)  # 获取foe lane 上的所有车
-
-                        if not foe_cars:
-                            continue
-
-                        # 找到foe_lane对应的交汇处的s
-                        for foe_lane_type_points_s_item_of_foe in foe_lane.foe_lane_type_points_s:
-                            if foe_lane_type_points_s_item_of_foe[0] == current_lane_id:
-                                foe_s = foe_lane_type_points_s_item_of_foe[3]
-                                break
-
-                        # 在当前冲突lane中比较哪台foe车离给定的S最近，并且没有超出S，每条冲突lane只有一个候选冲突车
-                        delta = 10000  # 给一个极大值
-                        foe_car_block_road=False
-                        for foe_car_each in foe_cars:
-                            # foe_car_lane_id = PanoSimTrafficAPI2.myGetVehicleLane(foe_car_each)
-                            foe_car_s_each=myGetDistanceFromLaneStart(foe_car_each)
-                            total_s= foe_s + PanoSimTrafficAPI2.myGetVehicleLength(foe_car_each) #车尾离开冲突点总行驶距离
-                            #车头到foe点的距离
-                            distance_from_head=abs(foe_s-foe_car_s_each) #TODO 算距离这里还可以简化
-                            #车尾到foe点的距离
-                            distance_from_end=abs(foe_s - (foe_car_s_each - PanoSimTrafficAPI2.myGetVehicleLength(foe_car_each)))
-                            min_distance=min(distance_from_head,distance_from_end)
-                            if foe_car_s_each < total_s and min_distance < delta:
-                                delta = min_distance
-                                real_foe_car = foe_car_each
-                                rest_foe_s=total_s-foe_car_s_each
-                                if foe_car_s_each>foe_s:
-                                    foe_car_block_road=True
-                                else:
-                                    foe_car_block_road=False
-
-                        if real_foe_car:
-                            foe_vehicle = Dao.vehicle_dictionary[real_foe_car]
-                            potential_foe_vehicles_inter_s.append((foe_vehicle, rest_foe_s,foe_car_block_road, foe_lane_type_points_s_item[3] - s))
-                # print("potential_foe_vehicles_inter_s are:",potential_foe_vehicles_inter_s)
-
-                # 没有搜索到敌对车
-                if not potential_foe_vehicles_inter_s:
-                    # print("在路口内")
-                    # print("没有搜索到敌对车")
-                    return cls.get_and_update_accelerator_normal_internal(vehicle,trajectory)
-                # 有敌对车
-                else:
-                    # print("在路口内")
-                    # print("有敌对车")
-                    all_acc=[]
-                    for item in potential_foe_vehicles_inter_s:
-                        log.info("{},{},{},{}".format(item[0].id,item[1],item[2],item[3]))
-                        target_vehicle = item[0]
-                        foe_rest_s = item[1]
-                        foe_car_block_road = item[2]
-                        rest_s = item[3] + PanoSimTrafficAPI2.myGetVehicleLength(vehicle.id) # 自己车到foe点的距离加上车长
-                        all_acc.append(cls.get_and_update_accelerator_internal_by_distance(vehicle,trajectory, rest_s, target_vehicle, foe_rest_s,foe_car_block_road))
-
-                    # print(vehicle.id," accs are:",all_acc)
-                    return min(all_acc)
-                    # closest_dis = 10000
-                    # target_vehicle = None
-                    # rest_s = 0  # 当前车到交点的距离
-                    # foe_rest_s = 0  # foe车到交点的距离
-                    # foe_car_block_road=False
-                    # for item in potential_foe_vehicles_inter_s:
-                    #     temp = TrafficInterface.two_car_distance(item[0].id, vehicle.id)
-                    #     print("temp is",temp)
-                    #     if temp < closest_dis:
-                    #         closest_dis = temp
-                    #         target_vehicle = item[0]
-                    #         foe_rest_s = item[1]
-                    #         foe_car_block_road=item[2]
-                    #         rest_s = item[3]
-                    # print("target_vehicle is", target_vehicle.id)
-                    # return cls.get_and_update_accelerator_internal(vehicle, rest_s, target_vehicle, foe_rest_s,foe_car_block_road)
 
             #如果接近路口了
             if vehicle.located_area==LocatedArea.ADJACENT_JUNCTION_AREA:
@@ -332,6 +244,215 @@ class MotivateInterfaceImpl(MotivateInterface):
             # return cls.get_and_update_accelerator_normal(vehicle, trajectory)
         # 判断冲突区域结束
 
+    @classmethod
+    def crossroad_game_model_old(cls,vehicle: Vehicle,trajectory:Trajectory,current_lane:InternalLane):
+
+        # print("Internal [",vehicle.id, "] is on ", current_lane_id)
+        s = myGetDistanceFromLaneStart(vehicle.id)
+        # 只判断最近的车的写法
+        potential_foe_vehicles_inter_s = []  # {冲突车，冲突车交点距离，当前车到交点距离}
+
+        # 只用计算前方三条冲突路需要用到 ，但是只计算三条不够
+        i = 3
+        calculate_count = 0
+        for foe_lane_type_points_s_item in current_lane.foe_lane_type_points_s:
+            # 只用计算前方三条冲突路
+            # calculate_count=calculate_count+1
+            # if calculate_count>=3:
+            #     break
+
+            if s < foe_lane_type_points_s_item[3]:
+                real_foe_car = None  # temp变量
+                rest_foe_s = 0  # foe车到交点的距离加上车身长度
+                foe_s = 0  # 交点的s值
+
+                foe_lane_id = foe_lane_type_points_s_item[0]
+                foe_lane = Dao.lane_dictionary[foe_lane_id]
+                foe_cars = PanoSimTrafficAPI2.myGetLaneVehicles(foe_lane_id)  # 获取foe lane 上的所有车
+
+                if not foe_cars:
+                    continue
+
+                # 找到foe_lane对应的交汇处的s
+                for foe_lane_type_points_s_item_of_foe in foe_lane.foe_lane_type_points_s:
+                    if foe_lane_type_points_s_item_of_foe[0] == current_lane.id:
+                        foe_s = foe_lane_type_points_s_item_of_foe[3]
+                        break
+
+                # 在当前冲突lane中比较哪台foe车离给定的S最近，并且没有超出S，每条冲突lane只有一个候选冲突车
+                delta = 10000  # 给一个极大值
+                foe_car_block_road = False
+                for foe_car_each in foe_cars:
+                    # foe_car_lane_id = PanoSimTrafficAPI2.myGetVehicleLane(foe_car_each)
+                    foe_car_s_each = myGetDistanceFromLaneStart(foe_car_each)
+                    total_s = foe_s + PanoSimTrafficAPI2.myGetVehicleLength(foe_car_each)+PanoSimTrafficAPI2.getVehicleWidth(vehicle.vehicle_type)/2  # 车尾离开冲突点总行驶距离
+                    # # 车头到foe点的距离
+                    # distance_from_head = abs(foe_s - foe_car_s_each)  # TODO 算距离这里还可以简化
+                    # 车尾到foe点的距离
+                    if foe_car_s_each>=total_s:
+                        continue
+                    if foe_car_s_each < delta:
+                        delta = foe_car_s_each
+                        real_foe_car = foe_car_each
+                        rest_foe_s = foe_s - foe_car_s_each
+                        if foe_car_s_each > foe_s-PanoSimTrafficAPI2.getVehicleWidth(vehicle.vehicle_type)/2:
+                            foe_car_block_road = True
+                        else:
+                            foe_car_block_road = False
+
+                if real_foe_car:
+                    foe_vehicle = Dao.vehicle_dictionary[real_foe_car]
+                    potential_foe_vehicles_inter_s.append(
+                        (foe_vehicle, rest_foe_s, foe_car_block_road, foe_lane_type_points_s_item[3]-s))
+        # print("potential_foe_vehicles_inter_s are:",potential_foe_vehicles_inter_s)
+
+        # 没有搜索到敌对车
+        if not potential_foe_vehicles_inter_s:
+            # print("在路口内")
+            # print("没有搜索到敌对车")
+            return cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
+        # 有敌对车
+        else:
+            # print("在路口内")
+            # print("有敌对车")
+            all_acc = []
+            for item in potential_foe_vehicles_inter_s:
+                log.info("{},{},{},{}".format(item[0].id, item[1], item[2], item[3]))
+                target_vehicle = item[0]
+                foe_rest_s = item[1]
+                foe_car_block_road = item[2]
+                rest_s = item[3]  # 自己车到foe点的距离
+                all_acc.append(
+                    cls.get_and_update_accelerator_internal_by_distance(vehicle, trajectory, rest_s, target_vehicle,
+                                                                        foe_rest_s, foe_car_block_road))
+
+            # print(vehicle.id," accs are:",all_acc)
+            return min(all_acc)
+            # closest_dis = 10000
+            # target_vehicle = None
+            # rest_s = 0  # 当前车到交点的距离
+            # foe_rest_s = 0  # foe车到交点的距离
+            # foe_car_block_road=False
+            # for item in potential_foe_vehicles_inter_s:
+            #     temp = TrafficInterface.two_car_distance(item[0].id, vehicle.id)
+            #     print("temp is",temp)
+            #     if temp < closest_dis:
+            #         closest_dis = temp
+            #         target_vehicle = item[0]
+            #         foe_rest_s = item[1]
+            #         foe_car_block_road=item[2]
+            #         rest_s = item[3]
+            # print("target_vehicle is", target_vehicle.id)
+            # return cls.get_and_update_accelerator_internal(vehicle, rest_s, target_vehicle, foe_rest_s,foe_car_block_road)
+
+    @classmethod
+    def crossroad_game_model_ST(cls, vehicle: Vehicle, trajectory: Trajectory, current_lane: InternalLane):
+        s = myGetDistanceFromLaneStart(vehicle.id)
+        # 只判断最近的车的写法
+        potential_foe_vehicles_inter_s = []  # {冲突车，冲突车交点距离，当前车到交点距离}
+
+        # 只用计算前方i条冲突路需要用到 ，但是只计算三条不够
+        i = 1
+        calculate_count = 0
+        for foe_lane_type_points_s_item in current_lane.foe_lane_type_points_s:
+            # 只用计算前方三条冲突路
+            calculate_count = calculate_count + 1
+            if calculate_count>=2: #只算一个路
+                break
+
+            if s < foe_lane_type_points_s_item[3]:
+                real_foe_car = None  # temp变量
+                rest_foe_s = 0  # foe车到交点的距离加上车身长度
+                foe_s = 0  # 交点的s值
+
+                foe_lane_id = foe_lane_type_points_s_item[0]
+                foe_lane = Dao.lane_dictionary[foe_lane_id]
+                foe_cars = PanoSimTrafficAPI2.myGetLaneVehicles(foe_lane_id)  # 获取foe lane 上的所有车
+
+                if not foe_cars:
+                    continue
+
+                # 找到foe_lane对应的交汇处的s
+                for foe_lane_type_points_s_item_of_foe in foe_lane.foe_lane_type_points_s:
+                    if foe_lane_type_points_s_item_of_foe[0] == current_lane.id:
+                        foe_s = foe_lane_type_points_s_item_of_foe[3]
+                        break
+
+                # 在当前冲突lane中比较哪台foe车离给定的S最近，并且没有超出S，每条冲突lane只有一个候选冲突车
+                delta = 10000  # 给一个极大值
+                foe_car_block_road = False
+                for foe_car_each in foe_cars:
+                    #TODO 这一块应该改成计算两车间的距离
+
+                    # foe_car_lane_id = PanoSimTrafficAPI2.myGetVehicleLane(foe_car_each)
+                    foe_car_s_each = myGetDistanceFromLaneStart(foe_car_each)
+                    total_s = foe_s +PanoSimTrafficAPI2.getVehicleWidth(vehicle.vehicle_type)/2 + PanoSimTrafficAPI2.myGetVehicleLength(foe_car_each)  # 车尾离开冲突区域总行驶距离
+                    # 车头到foe点的距离
+                    distance_from_head = abs(foe_s - foe_car_s_each)  # TODO 算距离这里还可以简化
+                    # 车尾到foe点的距离
+                    distance_from_end = abs(
+                        foe_s - (foe_car_s_each - PanoSimTrafficAPI2.myGetVehicleLength(foe_car_each)))
+                    min_distance = min(distance_from_head, distance_from_end)
+                    if foe_car_s_each < total_s and min_distance < delta:
+                        delta = min_distance
+                        real_foe_car = foe_car_each
+                        rest_foe_s = total_s - foe_car_s_each
+                        if foe_car_s_each > foe_s:
+                            foe_car_block_road = True
+                        else:
+                            foe_car_block_road = False
+
+                if real_foe_car:
+                    foe_vehicle = Dao.vehicle_dictionary[real_foe_car]
+                    potential_foe_vehicles_inter_s.append(
+                        (foe_vehicle, rest_foe_s, foe_car_block_road, foe_lane_type_points_s_item[3] - s))
+
+            # 没有搜索到敌对车
+            if not potential_foe_vehicles_inter_s:
+                return cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
+
+            # 拿到了foe车之后
+            else:
+                for item in potential_foe_vehicles_inter_s:
+                    log.info("{},{},{},{}".format(item[0].id, item[1], item[2], item[3]))
+                    target_vehicle = item[0]
+                    foe_rest_s = item[1]
+                    foe_car_block_road = item[2]
+                    rest_s = item[3]
+                    return cls.get_and_update_accelerator_by_ST(vehicle, trajectory, rest_s, target_vehicle,
+                                                                            foe_rest_s, foe_car_block_road)
+
+    @staticmethod
+    def get_and_update_accelerator_by_ST( vehicle: Vehicle, trajectory: Trajectory, dis_to_intersection: float,
+                                            foe_vehicle: Vehicle, foe_dis_to_intersection: float,
+                                            foe_car_block_road: bool) -> float:
+
+        veh_speed=vehicle.current_speed/3.6
+        foe_speed=foe_vehicle.current_speed/3.6
+
+        road_right=False
+
+        if veh_speed<=0:
+            road_right=road_right
+        elif foe_speed<=0:
+            road_right=True
+        elif dis_to_intersection/veh_speed>foe_dis_to_intersection/foe_speed:
+            road_right=True
+
+        if road_right:
+            acc=0 #保持匀速行驶
+            return acc
+        else:
+            half_of_foe_car_length=PanoSimTrafficAPI2.myGetVehicleLength(foe_vehicle.id) / 2
+            half_of_foe_car_width=PanoSimTrafficAPI2.getVehicleWidth(foe_vehicle.vehicle_type) / 2
+            half_of_foe_car_diagonal_length=pow(half_of_foe_car_length ** 2 + half_of_foe_car_width ** 2, 1 / 2)
+            t_2=foe_dis_to_intersection/foe_vehicle.current_speed
+            s=dis_to_intersection-half_of_foe_car_diagonal_length
+            a=2*s/t_2**2
+
+            return a
+
+
 
     @staticmethod
     def get_and_update_accelerator_normal(vehicle,trajectory:Trajectory) -> int:
@@ -394,7 +515,7 @@ class MotivateInterfaceImpl(MotivateInterface):
         s0 = 2  # 最小安全间距
         b_comfortable = 2  # 期望舒适减速度
 
-        current_speed = myGetVehicleSpeed(vehicle.id)
+        current_speed = vehicle.current_speed
         if current_speed < 0:
             log.warning("the current_speed is lower than 0,PLS check the logic or API")
             current_speed = 0
@@ -475,7 +596,7 @@ class MotivateInterfaceImpl(MotivateInterface):
         b_comfortable = 2  # 期望舒适减速度
 
         # current_speed = vehicle.current_speed  # 当前车速
-        current_speed = myGetVehicleSpeed(vehicle.id)
+        current_speed = vehicle.current_speed
         if current_speed < 0:
             log.warning("the current_speed is lower than 0,PLS check the logic or API")
             current_speed = 0
@@ -546,7 +667,7 @@ class MotivateInterfaceImpl(MotivateInterface):
             s0 = 6  # 最小安全间距
             b_comfortable = 2  # 期望舒适减速度
 
-            current_speed = myGetVehicleSpeed(vehicle.id)
+            current_speed = vehicle.current_speed
             if current_speed < 0:
                 log.warning("the current_speed is lower than 0,PLS check the logic or API")
                 current_speed = 0
@@ -565,13 +686,13 @@ class MotivateInterfaceImpl(MotivateInterface):
             else:
                 return normal_acc
 
-        my_speed= PanoSimTrafficAPI2.myGetVehicleSpeed(vehicle.id)
+        my_speed= vehicle.current_speed
         if my_speed<=0:
             my_spend_time = 10000
         else:
             my_spend_time = (dis_to_intersection + myGetVehicleLength(foe_vehicle.id)) / my_speed
         # foe_vehicle_length = PanoSimTrafficAPI2.myGetVehicleLength(foe_vehicle.id)
-        foe_speed= PanoSimTrafficAPI2.myGetVehicleSpeed(foe_vehicle.id)
+        foe_speed= foe_vehicle.current_speed
         if foe_speed<=0:
             foe_spend_time=9999
         else:
@@ -582,7 +703,7 @@ class MotivateInterfaceImpl(MotivateInterface):
             a_max = vehicle.max_accel  # 最大加速度
             v_desired = 40 / 3.6  # 汽车行驶期望速度 ,路口内要够慢
             delta = 4  # 自由加速指数δ
-            current_speed = myGetVehicleSpeed(vehicle.id)
+            current_speed = vehicle.current_speed
             if current_speed < 0:
                 log.warning("the current_speed is lower than 0,PLS check the logic or API")
                 current_speed = 0
@@ -605,7 +726,7 @@ class MotivateInterfaceImpl(MotivateInterface):
             s0 = 6  # 最小安全间距
             b_comfortable = 2  # 期望舒适减速度
 
-            current_speed = myGetVehicleSpeed(vehicle.id)
+            current_speed = vehicle.current_speed
             if current_speed < 0:
                 log.warning("the current_speed is lower than 0,PLS check the logic or API")
                 current_speed = 0
@@ -633,21 +754,21 @@ class MotivateInterfaceImpl(MotivateInterface):
         normal_acc = cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
         if foe_car_block_road:
             """private方法，返回idm跟驰模型下的加速度"""
-            a_max = vehicle.max_accel  # 最大加速度
+            a_max = rng.integers(3,5)  # 最大加速度
             v_desired = vehicle.max_v/1.5 / 3.6  # 汽车行驶期望速度 ,路口内要够慢
             delta = 4  # 自由加速指数δ
             t_desired = 1.5  # 汽车安全车头时距T
-            s0 = 6  # 最小安全间距
+            s0 = 0  # 最小安全间距
             b_comfortable = 2  # 期望舒适减速度
 
-            current_speed = myGetVehicleSpeed(vehicle.id)
+            current_speed = vehicle.current_speed
             if current_speed < 0:
                 log.warning("the current_speed is lower than 0,PLS check the logic or API")
                 current_speed = 0
 
             leader_v = 0
             v_delta = current_speed - leader_v  # 前后车速度差绝对值
-            s_delta = dis_to_intersection # 车辆前脸正中心到交点的距离
+            s_delta = dis_to_intersection-PanoSimTrafficAPI2.getVehicleWidth(foe_vehicle.vehicle_type)/2 # 车辆前脸正中心到碰撞位置的距离
             if s_delta < 0.1:
                 s_delta = 0.1
             s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
@@ -663,10 +784,10 @@ class MotivateInterfaceImpl(MotivateInterface):
         if dis_to_intersection <= foe_dis_to_intersection:
             # acc = 2*(dis_to_intersection)/(foe_spend_time*foe_spend_time)
             """private方法，返回idm跟驰模型下的加速度"""
-            a_max = vehicle.max_accel  # 最大加速度
+            a_max = rng.integers(3,5)  # 最大加速度
             v_desired = vehicle.max_v/1.5 / 3.6  # 汽车行驶期望速度 ,路口内要够慢
             delta = 4  # 自由加速指数δ
-            current_speed = myGetVehicleSpeed(vehicle.id)
+            current_speed = vehicle.current_speed
             if current_speed < 0:
                 log.warning("the current_speed is lower than 0,PLS check the logic or API")
                 current_speed = 0
@@ -682,21 +803,21 @@ class MotivateInterfaceImpl(MotivateInterface):
                 return normal_acc
         if dis_to_intersection > foe_dis_to_intersection:
             """private方法，返回idm跟驰模型下的加速度"""
-            a_max = vehicle.max_accel  # 最大加速度
+            a_max = rng.integers(3,5)  # 最大加速度
             v_desired = vehicle.max_v/1.5 / 3.6  # 汽车行驶期望速度 ,路口内要够慢
             delta = 4  # 自由加速指数δ
             t_desired = 1.5  # 汽车安全车头时距T
-            s0 = 6  # 最小安全间距
+            s0 = 0  # 最小安全间距
             b_comfortable = 2  # 期望舒适减速度
 
-            current_speed = myGetVehicleSpeed(vehicle.id)
+            current_speed = vehicle.current_speed
             if current_speed < 0:
                 log.warning("the current_speed is lower than 0,PLS check the logic or API")
                 current_speed = 0
 
             leader_v = 0
             v_delta = current_speed - leader_v  # 前后车速度差绝对值
-            s_delta = TrafficInterface.two_car_distance(vehicle.id,foe_vehicle.id)+2  # 车辆前脸正中心到交点的距离
+            s_delta = dis_to_intersection-PanoSimTrafficAPI2.getVehicleWidth(foe_vehicle.vehicle_type)/2  # 车辆前脸正中心到交点的距离
             if s_delta < 0.1:
                 s_delta = 0.1
             s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
@@ -723,7 +844,7 @@ class MotivateInterfaceImpl(MotivateInterface):
         s0 = 1  # 最小安全间距
         b_comfortable = 2  # 期望舒适减速度
 
-        current_speed = myGetVehicleSpeed(vehicle.id)
+        current_speed = vehicle.current_speed
         if current_speed < 0:
             log.warning("the current_speed is lower than 0,PLS check the logic or API")
             current_speed = 0
