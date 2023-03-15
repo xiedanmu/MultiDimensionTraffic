@@ -158,7 +158,7 @@ class AlgorithmInterfaceImpl(AlgorithmInterface):
     # [i]: {[x, y, laneid, s, l, cums, cuml, yaw], ..., [x, y, laneid, s, l, cums, cuml, yaw]},s 传入车辆轨迹的list和实际s
     # [o]: (x, y, laneid, s, l, cums, cuml, yaw),pos传出线性插值后的数据,以及较小的那个索引
     @classmethod
-    def get_tuple_by_linear_interpolation(cls, trajectory, s):
+    def get_tuple_by_linear_interpolation(cls, trajectory, s, continue_lane_length):
         pos = bisect_left(trajectory.s_in_current_trajectory, s)-1  # 较小的那个索引
         #车辆速度为0就会导致pos==-1
         if pos ==-1:
@@ -181,10 +181,39 @@ class AlgorithmInterfaceImpl(AlgorithmInterface):
         real_y = trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][1] + ratio * (
                 trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos + 1][1] -
                 trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][1])
-        lane_id = trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][2]
-        real_s = trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][3] + ratio * (
-                trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos + 1][3] -
-                trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][3])
+
+
+        #后面+1位置的的lane不是pos这个位置的lane
+        target_lane_id=trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][2]
+        target_next_lane_id=trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos+1][2]
+        if target_lane_id!=target_next_lane_id:
+            lane_list=list(continue_lane_length.keys())
+            target_next_lane_index= lane_list.index(target_next_lane_id)
+            target_lane_index = lane_list.index(target_lane_id)
+
+            difference_value=target_next_lane_index-target_lane_index
+            total_subtract_distance=0
+            for dif in range(1,difference_value+1):
+                target_index=target_next_lane_index-dif
+                total_subtract_distance+=continue_lane_length[lane_list[target_index]]
+
+            real_s = trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][3] + ratio * (
+                    trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos + 1][5] -
+                    trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][5])
+
+
+            if real_s>total_subtract_distance:
+                real_s=real_s- total_subtract_distance
+                lane_id = target_next_lane_id
+            else:
+                lane_id = target_lane_id
+
+        else:
+            real_s = trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][3] + ratio * (
+                    trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos + 1][3] -
+                    trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][3])
+            lane_id = trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][2]
+
         real_l = trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][4] + ratio * (
                 trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos + 1][4] -
                 trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[pos][4])

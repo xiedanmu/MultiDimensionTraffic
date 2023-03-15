@@ -3,7 +3,9 @@
 #
 import math
 
-from Library.package_platformAPI import PanoSimTrafficAPI2
+import numpy as np
+
+from Library.package_platformAPI.SimPlatformAPI import SimPlatformAPI
 from Library.package_entity.Class_Trajectory import Trajectory
 from Library.package_entity.Class_Vehicle import Vehicle
 from Library.package_entity.Class_Lane import Lane
@@ -64,17 +66,17 @@ class Dao:
         g_dicLaneToFoeLanes = {}
         g_dicAllLaneToLanes = {}
 
-        junctionList = PanoSimTrafficAPI2.myGetJunctionList()
+        junctionList = SimPlatformAPI.myGetJunctionList()
         if len(junctionList) > 0:
             log.info("acquire Lane process start")
             for junctionId in junctionList:
                 # print("Current loop junction: ", junctionId)
-                incomingLanes = PanoSimTrafficAPI2.myGetIncomingLanes(junctionId)
+                incomingLanes = SimPlatformAPI.myGetIncomingLanes(junctionId)
 
                 #E开头的道路计算道路中心线信息并放入g_dicLaneShapes
                 for incLaneId in incomingLanes:
                     # print("Current loop junction: ", junctionId, "current loop incoming lane: ", incLaneId)
-                    normalLaneShape = PanoSimTrafficAPI2.myGetLaneShape(incLaneId)
+                    normalLaneShape = SimPlatformAPI.myGetLaneShape(incLaneId)
                     if (len(normalLaneShape) > 1):
                         resizedLaneShape = AlgorithmInterface.getLaneShapeWithOnlyXY(normalLaneShape)
                         g_dicLaneShapes[incLaneId] = resizedLaneShape
@@ -83,10 +85,10 @@ class Dao:
                         log.warning("Warning: [{}] has no point list from getLaneShape".format(incLaneId))
 
                 # J开头的道路计算道路中心线信息并放入g_dicLaneShapes
-                internalLanes = PanoSimTrafficAPI2.myGetInternalLanes(junctionId)
+                internalLanes = SimPlatformAPI.myGetInternalLanes(junctionId) # 注意这里，把小junction分隔开的道路也囊括进去了
                 for intLaneId in internalLanes:
                     log.info("Current loop junction: {},current loop internal lane:{} ".format(junctionId,intLaneId))
-                    normalLaneShape = PanoSimTrafficAPI2.myGetLaneShape(intLaneId)
+                    normalLaneShape = SimPlatformAPI.myGetLaneShape(intLaneId)
                     # print("Internal Lanes", intLaneId, normalLaneShape)
                     if (len(normalLaneShape) > 1):
                         resizedLaneShape = AlgorithmInterface.getLaneShapeWithOnlyXY(normalLaneShape)
@@ -99,14 +101,17 @@ class Dao:
                 """初始化FOE的lane,之所以没有和上面的for循环合并，是因为需要所有的内部道路的resizedLaneShape计算完毕"""
                 for intLaneId in internalLanes:
                     cls.lane_dictionary[intLaneId] = InternalLane(intLaneId)  #实例化对象并放入lane_dictionary
-                    foe_lanes_and_types = PanoSimTrafficAPI2.myGetInternalFoeLanes(intLaneId)
+                    foe_lanes_and_types = SimPlatformAPI.myGetInternalFoeLanes(intLaneId)
 
                     if foe_lanes_and_types:
                         for foe_lane_and_type in foe_lanes_and_types:
                             flag = False
                             # foe_lane_and_type下标0是lane id，下标1是冲突类型的结构体
                             foe_lane_id = foe_lane_and_type[0]
-                            foe_type = foe_lane_and_type[1].value
+                            try:
+                                foe_type = foe_lane_and_type[1].value #这个是不同的平台返回的数据类型不一样，就如此处理了
+                            except:
+                                foe_type = foe_lane_and_type[1]
                             foe_lane_shape = g_dicLaneShapes[foe_lane_id]
                             current_lane_shape = g_dicLaneShapes[intLaneId]
 
@@ -129,11 +134,22 @@ class Dao:
 
                                         flag = True
                                         x, y = result
-
                                         x1, y1 = start2
 
                                         s = caculateStation(x1, y1, x, y)+current_lane_shape[current_index][2]
-                                        cls.lane_dictionary[intLaneId].foe_lane_type_points_s.append((foe_lane_id, foe_type, (x, y),s))
+
+                                        # 求向量夹角
+                                        my_vector = np.array([end2[0] - start2[0], end2[1] - start2[1]])
+                                        foe_vector = np.array([end1[0] - start1[0], end1[1] - start1[1]])
+
+                                        module_x = np.linalg.norm(my_vector)
+                                        module_y = np.linalg.norm(foe_vector)
+
+                                        cos_angle = my_vector.dot(foe_vector) / (module_x * module_y)
+                                        vectorial_angle = np.arccos(cos_angle)
+                                        # 求向量夹角Done
+
+                                        cls.lane_dictionary[intLaneId].foe_lane_type_points_s.append((foe_lane_id, foe_type, (x, y),s,vectorial_angle))
 
                                     if flag:  # 跳出里层循环
                                         break
@@ -150,12 +166,12 @@ class Dao:
         # lane to lanes. 这里是忽略中间车道，直接访问下一个车道，这里是获取lane to lane的结构
         for i in g_dicLaneShapes:
             toLanes = []
-            dirs = PanoSimTrafficAPI2.myGetValidDirections(i)
+            dirs = SimPlatformAPI.myGetValidDirections(i)
             log.info("directions of {} is {}".format(i,dirs))
             # if (len(dirs) <= 0):
             #     continue  # internal lane用这个函数没用，因为没有direction
             for dir in dirs:
-                toLanesAll = PanoSimTrafficAPI2.myGetAllNextLanes(i, dir)
+                toLanesAll = SimPlatformAPI.myGetAllNextLanes(i, dir)
                 log.info("tolane of {} in {} is {}".format(i,dir,toLanes))
                 if toLanesAll != None:
                     for toLane in toLanesAll:
@@ -166,7 +182,7 @@ class Dao:
             all_to_lanes= {} #e.g. {'stright':['gneJ1_0_0','gneE1_0']}
             for dir in dirs:
                 log.info("getAllNextLanes test")
-                toLanes = PanoSimTrafficAPI2.myGetAllNextLanes(i, dir)
+                toLanes = SimPlatformAPI.myGetAllNextLanes(i, dir)
                 log.info("tolane of {} in {} is {}".format(i,dir,toLanes))
                 if toLanes != "":
                     all_to_lanes[dir]=toLanes
@@ -219,7 +235,7 @@ class Dao:
 
     @classmethod
     def init_internal_foe_lane(cls):
-        junctionList = PanoSimTrafficAPI2.myGetJunctionList()
+        junctionList = SimPlatformAPI.myGetJunctionList()
 
         pass
 
@@ -248,16 +264,16 @@ class Dao:
 
     @classmethod
     def init_lane_type(cls):
-        junction_list = PanoSimTrafficAPI2.myGetJunctionList()
+        junction_list = SimPlatformAPI.myGetJunctionList()
         for junction_id in junction_list:
-            incoming_lanes = PanoSimTrafficAPI2.myGetIncomingLanes(junction_id)
+            incoming_lanes = SimPlatformAPI.myGetIncomingLanes(junction_id)
             for item_id in incoming_lanes:
-                if item_id in cls.lane_dictionary.keys():
+                if item_id in cls.lane_dictionary.keys() and cls.lane_dictionary[item_id].type==None: #==None是为了避免重复赋值，比如小junction会把上一条internal lane 作为incoming lane
                     cls.lane_dictionary[item_id].type = TypesOfRoad.NORMAL_LANE
-                    if not PanoSimTrafficAPI2.myIsDeadEnd(item_id):
+                    if not SimPlatformAPI.myIsDeadEnd(item_id):
                         cls.lane_dictionary[item_id].set_is_dead_end(False)
 
-            internal_lanes = PanoSimTrafficAPI2.myGetInternalLanes(junction_id)
+            internal_lanes = SimPlatformAPI.myGetInternalLanes(junction_id)
             for int_lane_id in internal_lanes:
                 if int_lane_id in cls.lane_dictionary.keys():
                     cls.lane_dictionary[int_lane_id].type = TypesOfRoad.INTERNAL_LANE
@@ -271,15 +287,30 @@ class Dao:
     @classmethod
     def refresh_dao(cls):
         """更新Dao层数据"""
-        vehicle_list = PanoSimTrafficAPI2.myGetVehicleList()
+        vehicle_list=SimPlatformAPI.myGetVehicleList()
+        vehicle_set = set(SimPlatformAPI.myGetVehicleList())
 
-        for old_vehicle_id in list(cls.vehicle_dictionary.keys()):
-            if old_vehicle_id not in vehicle_list:
+        if vehicle_list.__len__()>0 and vehicle_list[0]==0:
+            ego_x=SimPlatformAPI.myGetVehicleX(0)
+            ego_y=SimPlatformAPI.myGetVehicleY(0)
+            for vehId in vehicle_list:
+                x=SimPlatformAPI.myGetVehicleX(vehId)
+                y=SimPlatformAPI.myGetVehicleY(vehId)
+
+                if (x-ego_x)**2+(y-ego_y)**2>40000: #40000开方200，节约计算量
+                    vehicle_set.remove(vehId)
+
+            del vehicle_list[0]
+            vehicle_set.remove(0)
+
+
+        for old_vehicle_id in set(cls.vehicle_dictionary.keys()):
+            if old_vehicle_id not in vehicle_set:
                 del cls.vehicle_dictionary[old_vehicle_id]
                 del cls.trajectory_dictionary[old_vehicle_id]
 
-        for vehicle_id in vehicle_list:
-            if vehicle_id not in list(cls.vehicle_dictionary.keys()):
+        for vehicle_id in vehicle_set:
+            if vehicle_id not in set(cls.vehicle_dictionary.keys()):
                 cls.vehicle_dictionary[vehicle_id] = Vehicle(vehicle_id)
                 cls.trajectory_dictionary[vehicle_id] = Trajectory(vehicle_id)
 
@@ -310,11 +341,11 @@ class Dao:
 
         result_direction=None
         #internal Lane 是不会有dirs的
-        dirs = PanoSimTrafficAPI2.myGetValidDirections(current_lane_id)
+        dirs = SimPlatformAPI.myGetValidDirections(current_lane_id)
         if (len(dirs) <= 0):
             log.info("[{}] has no directions".format(current_lane_id))
         for dir in dirs:
-            toLanes_list = PanoSimTrafficAPI2.myGetAllNextLanes(current_lane_id, dir)
+            toLanes_list = SimPlatformAPI.myGetAllNextLanes(current_lane_id, dir)
 
             for toLanes in toLanes_list:
                 if next_lane_id in toLanes:

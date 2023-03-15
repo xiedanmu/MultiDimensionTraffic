@@ -30,7 +30,7 @@ class AlgorithmInterface(metaclass=ABCMeta):
     # [i]: {[x, y, laneid, s, l, cums, cuml, yaw], ..., [x, y, laneid, s, l, cums, cuml, yaw]},s 传入车辆轨迹的list和实际s
     # [o]: (x, y, laneid, s, l, cums, cuml, yaw),pos传出线性插值后的数据,以及较小的那个索引
     @classmethod
-    def get_tuple_by_linear_interpolation(cls, trajectory, s):
+    def get_tuple_by_linear_interpolation(cls, trajectory, s,continue_lane_length):
         return
 
     # 给定两条线段（表示为起点start = {X1, Y1}和终点end = {X2, Y2}），如果它们有交点，请计算其交点，没有交点则返回空值。

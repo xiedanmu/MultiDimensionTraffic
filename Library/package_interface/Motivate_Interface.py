@@ -30,7 +30,7 @@ class MotivateInterface(metaclass=ABCMeta):
     '''
 
     @abstractmethod  # 声明为抽象方法，子类必须重写的方法
-    def pop_point_in_trajectory(cls, vehicle, trajectory):
+    def pop_point_in_trajectory(cls, vehicle, trajectory,delta_T):
         return
 
     @abstractmethod# 声明为抽象方法，子类必须重写的方法
@@ -38,5 +38,5 @@ class MotivateInterface(metaclass=ABCMeta):
         return
 
     @abstractmethod  # 声明为抽象方法，子类必须重写的方法
-    def move_to(vehID, x, y, yaw):
+    def move_to(cls,vehID, x, y, yaw,lane,s,l):
         return

@@ -1,9 +1,12 @@
+import cProfile
+import pstats
 import time
 import platform
 from TrafficModelInterface import *
 from Library.package_dao.Class_UserParameters import UserParameters
 from Library.package_dao.Class_Dao import Dao
-from Library.package_runservice.RunService import run_main,output_vehicle_data_file
+from Library.package_platformAPI.SimPlatformAPI import SimPlatformAPI
+from Library.package_runservice.RunService import run_main,output_vehicle_data_file,output_profile_data
 from Library.package_multithread.Class_MultiThread import MultiThreadPool
 
 import logging
@@ -12,12 +15,26 @@ log.addHandler(logging.NullHandler())
 # logging.basicConfig(level=logging.WARNING)
 # logging.disable(logging.ERROR)
 
+#用于性能分析
+pr = cProfile.Profile()
+pr.enable()
+
+def f8(x):
+    ret = "%8.3f" % x
+    if ret != '   0.000':
+        return ret
+    return "%6dµs" % (x * 10000000)
+
+pstats.f8 = f8
+#用于性能分析
+
 def ModelStart(userdata):
     log.info('python version of Pano is :{} '.format(platform.python_version()))
     log.info("start here")
     time.sleep(2)
-    Dao.init_from_begin(userdata)
+    SimPlatformAPI.setTargetAPI('PanoAPI')
 
+    Dao.init_from_begin(userdata)
     Global_in = userdata['parameters']
 
     userdata["Seed"] = float(Global_in["Seed"])
@@ -42,33 +59,41 @@ def ModelStart(userdata):
     userdata["CasualRatio"] = float(Global_in["CasualRatio"])
     # if not hasattr(sys, 'argv'):
     #     sys.argv = ['']
-    # new_car=PanoSimTrafficAPI2.myAddVehicle(398,185,10)
+    # new_car=SimPlatformAPI.myAddVehicle(398,185,10)
 
 def ModelOutput(userdata):
-    print('this time is:[', userdata['time'], ']')
+    #time_start=time.perf_counter()
+    print('This time is:[', userdata['time'], ']')
+    print('Number of vehicles the script takes over is:',Dao.vehicle_dictionary.__len__())
     log.info("@....output here,time is:{}....@".format(userdata["time"]))
     if not Dao.init_finished:
         log.warning("Dao init not finished")
         return
 
-    Dao.refresh_dao()
+    Dao.refresh_dao() #似乎是多余的
 
     # # 单车测试
     # curTime = userdata["time"]
     # if curTime<1000:
     #     for vehicle in Dao.vehicle_dictionary.values():
-    #         PanoSimTrafficAPI2.myMoveTo(vehicle.id, 398, 200, 180)
+    #         SimPlatformAPI.myMoveTo(vehicle.id, 398, 200, 180)
     #     return
 
     # print("---test---")
     # test()
     log.info("---run main---")
+
     run_main(userdata,MultiThreadPool)
     log.info("---run main end---")
-    # Dao.update_userdata(userdata)  # 没用
-
+    #print(f'cost:{time.perf_counter() - time_start:.8f}s')
 
 def ModelTerminate(userdata):
     # export_lane_shape_information(userdata)
     #output_vehicle_data_file()
+    pr.disable()
+    stats = pstats.Stats(pr)
+    stats.sort_stats('cumulative')  # 'cumulative','time'
+    stats.print_stats()
+    stats.dump_stats(filename='C:\\Users\\47551\\Desktop\\temp\\profile\\model_profiling.prof')
+    # output_profile_data()
     pass
