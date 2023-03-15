@@ -1,0 +1,22 @@
+Name,DisplayName,Type,Default,Group,SubGroup,Tips,Include,Exclude,Switch,Visible
+BasicParameter,Basic Parameter,Group,,,,,,,FALSE,FALSE
+EnvironmentParameter,Environment Parameter,Group,,,,,,,FALSE,FALSE
+DriverParameter,Driver Parameter,Group,,,,,,,FALSE,FALSE
+VehicleParameter,Vehicle Parameter,Group,,,,,,,FALSE,FALSE
+DrivingTaskParameter,Driving Task Parameter,Group,,,,,,,FALSE,FALSE
+Seed,Seed (/),double,0,BasicParameter,,,,,,
+VehicleDensity,Vehicle Density(veh/km),double,0.2,BasicParameter,,,,,,
+MeanSpeed,Mean Speed (km/h),double,90,BasicParameter,,,,,,
+MeanFrictionCoefficient,Mean Friction Coefficient (/),double,0.8,EnvironmentParameter,,,,,,
+MeanCurvature,Mean Curvature (/),double,0,EnvironmentParameter,,,,,,
+MeanSlope,Mean Slope (/),double,0,EnvironmentParameter,,,,,,
+Visibility,Visibility (m),double,500,EnvironmentParameter,,,,,,
+CautiousRatio,Cautious Ratio (%),double,0.3,DriverParameter,,,,,,
+CommonRatio,Common Ratio (%),double,0.5,DriverParameter,,,,,,
+RadicalRatio,Radical Ratio (%),double,0.2,DriverParameter,,,,,,
+CarRatio,Car Ratio (%),double,0.5,VehicleParameter,,,,,,
+BusRatio,Bus Ratio (%),double,0.2,VehicleParameter,,,,,,
+OtherRatio,Other Ratio (%),double,0.3,VehicleParameter,,,,,,
+EmergencyRatio,Emergency Ratio (%),double,0.2,DrivingTaskParameter,,,,,,
+CommonRatio,Common Ratio (%),double,0.5,DrivingTaskParameter,,,,,,
+CasualRatio,Casual Ratio (%),double,0.3,DrivingTaskParameter,,,,,,

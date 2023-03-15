@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2023-03-14 11:06:56 by Eclipse SUMO GUI Version 1.12.0
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+
+    <input>
+        <net-file value="hello.net.xml.backup"/>
+        <additional-files value="e1detector.xml"/>
+    </input>
+
+    <time>
+        <begin value="0"/>
+        <end value="150000"/>
+        <step-length value="0.1"/>
+    </time>
+
+    <traci_server>
+        <remote-port value="50414"/>
+    </traci_server>
+
+    <gui_only>
+        <quit-on-end value="true"/>
+        <start value="true"/>
+        <tracker-interval value="0.1"/>
+    </gui_only>
+
+</configuration>
+-->
+
+<detector xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/det_e1_file.xsd">
+</detector>
