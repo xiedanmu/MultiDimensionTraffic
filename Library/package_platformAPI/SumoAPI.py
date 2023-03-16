@@ -1065,5 +1065,6 @@ class SumoAPI:
     def myGetTime():
         return traci.simulation.getTime()
 
-
-
+    @classmethod
+    def myDeleteVehicle(cls,veh_id):
+        return traci.vehicle.remove(str(veh_id))

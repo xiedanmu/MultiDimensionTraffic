@@ -343,7 +343,9 @@ class SimPlatformAPI:
     def myGetEdgeIDByLaneID(cls, lane_id):
         return cls.Behavior.myGetEdgeIDByLaneID(lane_id) #只有SUMOAPI有这个功能
 
-
+    @classmethod
+    def myDeleteVehicle(cls,veh_ID):
+        return cls.Behavior.myDeleteVehicle(veh_ID)
 
 
 

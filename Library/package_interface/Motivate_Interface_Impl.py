@@ -108,7 +108,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                     if SimPlatformAPI.myGetLeaderVehicle(vehicle.id) > -1:
                         return cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
 
-                if vehicle.foe_vehicle is not None:
+                if vehicle.foe_vehicle is not None and vehicle.foe_vehicle in Dao.vehicle_dictionary:
                     if vehicle.located_area != LocatedArea.INTERNAL:
                         # vehicle.foe_vehicle = None
                         foe_s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.foe_vehicle.id)
@@ -668,23 +668,23 @@ class MotivateInterfaceImpl(MotivateInterface):
                 try:  # 主车存在的情况下，超出接管范围的车不在dao中，如果出现key error，就用pano接口获取前车速度
                     leader_vehicle = Dao.vehicle_dictionary[leader]
                 except:
-                    s_delta = TrafficInterface.two_car_distance(vehicle.id, leader) - SimPlatformAPI.myGetVehicleLength(
-                        leader)  # 车辆间距
-                    if s_delta < 0:
-                        s_delta = 0.001
-                    v_delta = current_speed - SimPlatformAPI.myGetVehicleSpeed(leader)  # 前后车速度差绝对值
-                    s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
-                                2. * pow(a_max * b_comfortable, 0.5))  # 理想期望间距
-                    acc = a_max * (1. - pow((current_speed / v_desired), delta) - pow(s_star / s_delta, 2.))
+                    leader_speed=SimPlatformAPI.myGetVehicleSpeed(leader)
+
                 else:
-                    s_delta = TrafficInterface.two_car_distance(vehicle.id, leader) - SimPlatformAPI.myGetVehicleLength(
-                        leader)  # 车辆间距
-                    if s_delta < 0:
-                        s_delta = 0.001
-                    v_delta = current_speed - leader_vehicle.current_speed  # 前后车速度差绝对值
-                    s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
-                                2. * pow(a_max * b_comfortable, 0.5))  # 理想期望间距
-                    acc = a_max * (1. - pow((current_speed / v_desired), delta) - pow(s_star / s_delta, 2.))
+
+                    leader_speed=leader_vehicle.current_speed
+
+
+                two_car_distance = TrafficInterface.two_car_distance(vehicle.id, leader)
+
+
+                s_delta = two_car_distance - SimPlatformAPI.myGetVehicleLength(leader)  # 车辆间距
+                if s_delta < 0:
+                    s_delta = 0.001
+                v_delta = current_speed - leader_speed  # 前后车速度差绝对值
+                s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
+                        2. * pow(a_max * b_comfortable, 0.5))  # 理想期望间距
+                acc = a_max * (1. - pow((current_speed / v_desired), delta) - pow(s_star / s_delta, 2.))
 
         return acc
 
@@ -1593,7 +1593,16 @@ class MotivateInterfaceImpl(MotivateInterface):
     @classmethod
     def pop_point_in_trajectory(cls, vehicle, trajectory,delta_T):
         """根据当前仿真步车辆的速度和在轨迹中的s找到应该更新的点,并删除过期的点"""
-        acc = cls.get_and_update_accelerator(vehicle, trajectory)
+
+        if vehicle.is_accidental == True:
+            return trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0]
+
+        acc=vehicle.a_dict[vehicle.next_a_index]
+
+        future_acc = cls.get_and_update_accelerator(vehicle, trajectory)
+        vehicle.next_a_index = (vehicle.next_a_index + 1) % vehicle.a_dict.__len__()
+        vehicle.a_dict[vehicle.next_a_index]=future_acc
+
         # if vehicle.acc_used_account < 10 and vehicle.acc_used_account > 0:
         #     acc = vehicle.current_acceleration
         #     vehicle.acc_used_account += 1

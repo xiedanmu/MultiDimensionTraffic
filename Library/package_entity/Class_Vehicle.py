@@ -20,6 +20,10 @@ class Vehicle:
         self.is_calculate_trajectory=False
         self.max_v = SimPlatformAPI.myGetVehicleMaxSpeed(car_id) + rng.integers(-20, 20)
         #TODO 每10ms的加速度存储集，在后面第n个10ms用来计算，至于存多少个，是一个变量。有重叠的车直接停下来（第三套逻辑，暂时主干道且跟驰的情况下），等m秒后消失。shapely可用于检测点是否在一个矩形内
+
+        self.a_dict= {i:0 for i in range(10)} #创建十个index且全为0的字典
+        self.next_a_index=self.a_dict.__len__()-1 #下一步提取的a的index
+
         self.max_accel = SimPlatformAPI.myGetVehicleMaxAccel(car_id) #+ rng.integers(-1, 1)
         self.max_decel = SimPlatformAPI.myGetVehicleMaxDecel(car_id)
         self.current_speed = SimPlatformAPI.myGetVehicleSpeed(car_id)
@@ -40,6 +44,10 @@ class Vehicle:
         self.width = SimPlatformAPI.getVehicleWidth(self.vehicle_type)
         self.ignored = False
 
+        '''碰撞功能'''
+        self.is_accidental = False
+        self.accidental_time = 0
+        self.going_to_delete = False
 
         self.going_to_update_acc=None
         self.going_to_update_speed=None

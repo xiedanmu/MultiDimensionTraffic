@@ -17,6 +17,8 @@ from Library.package_entity.Enum_Types_Of_Road import TypesOfRoad
 from Library.package_entity.Enum_Located_Area import LocatedArea
 import pandas as pd
 
+from Library.package_dao.Class_UserParameters import UserParameters
+
 from Library.package_interface.Traffic_Interface_Impl import TrafficInterfaceImpl
 import logging
 log = logging.getLogger(__name__)
@@ -188,6 +190,23 @@ def update_location_data_each(vehicle, queue,delta_T):
     # if len(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set)==0:
     #     return
 
+    '''
+    开启碰撞就停止功能
+    '''
+    if UserParameters.collision_stop is True:
+
+        if vehicle.is_accidental == True:
+            vehicle.accidental_time+=delta_T
+            if vehicle.accidental_time>10:
+                vehicle.going_to_delete=True
+        elif vehicle.lane_type==TypesOfRoad.NORMAL_LANE:
+            leader_id=SimPlatformAPI.myGetLeaderVehicle(vehicle.id)
+
+            if leader_id>0 and TrafficInterface.two_car_distance(vehicle.id,leader_id) < SimPlatformAPI.myGetVehicleLength(leader_id):
+                leader = Dao.vehicle_dictionary[leader_id]
+                leader.is_accidental = True
+                vehicle.is_accidental = True
+
     # 每个仿真步都会重新计算速度和加速度，但不会计算轨迹
     # 用新的速度得到的s去轨迹中找到离之最近的点，用这个点来更新当前位置
     (x, y, laneid, s, l, cums, cuml, yaw) = MotivateInterface.pop_point_in_trajectory(vehicle, trajectory,delta_T)
@@ -269,6 +288,9 @@ def submit_location_data_for_all(userdata):
     for vehicle in Dao.vehicle_dictionary.values():
         if vehicle.is_xy_v_updated_lastT is True:
             #count+=1
+            continue
+        elif vehicle.going_to_delete:
+            SimPlatformAPI.myDeleteVehicle(vehicle.id)
             continue
         vehicle.set_acceleration(vehicle.going_to_update_acc)
         vehicle.set_speed(vehicle.going_to_update_speed)
