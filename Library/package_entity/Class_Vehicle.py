@@ -27,10 +27,11 @@ class Vehicle:
         self.max_accel = SimPlatformAPI.myGetVehicleMaxAccel(car_id) #+ rng.integers(-1, 1)
         self.max_decel = SimPlatformAPI.myGetVehicleMaxDecel(car_id)
         self.current_speed = SimPlatformAPI.myGetVehicleSpeed(car_id)
-        self.current_lane = SimPlatformAPI.myGetVehicleLane(car_id)  # 后续会变成一个对象,但是要确保体系中的lane包括了了PanoSim中的所有lane，有待验证
+        self.current_lane_id = SimPlatformAPI.myGetVehicleLane(car_id)  # 后续会变成一个对象,但是要确保体系中的lane包括了了PanoSim中的所有lane，有待验证
         self.current_acceleration = SimPlatformAPI.myGetVehicleAccel(car_id)
         self.current_X = SimPlatformAPI.myGetVehicleX(car_id)
         self.current_Y = SimPlatformAPI.myGetVehicleY(car_id)
+        self.current_S = SimPlatformAPI.myGetDistanceFromLaneStart(car_id)
         self.current_Yaw = SimPlatformAPI.myGetVehicleYaw(car_id)
         self.current_Route = SimPlatformAPI.myGetVehicleRoute(car_id)
         self.driving_mode = None  # Driving_Mode
@@ -54,7 +55,7 @@ class Vehicle:
         self.going_to_update_x=None
         self.going_to_update_y=None
         self.going_to_update_yaw=None
-        self.going_to_update_lane = None
+        self.going_to_update_lane_id = None
         self.going_to_update_s = None
         self.going_to_update_l = None
         self.going_to_update_Route=None
