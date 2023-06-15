@@ -30,7 +30,7 @@ if __name__ == "__main__":
     userdata["time"] = traci.simulation.getTime()
     atap.ModelStart(userdata)
 
-    for step in range(0,3600):
+    for step in range(0,600):
         userdata["time"] = traci.simulation.getTime()
         atap.ModelOutput(userdata)
 #        traci.vehicle.setSpeed('a12.5',10)
@@ -38,4 +38,5 @@ if __name__ == "__main__":
 #        print(traci.edge.getIDList())
 #        print(traci.inductionloop.getVehicleData('abcd'))
         traci.simulationStep()
+    atap.ModelTerminate(userdata)
     traci.close()

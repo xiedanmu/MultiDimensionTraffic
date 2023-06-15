@@ -339,15 +339,15 @@ class TrafficInterfaceImpl(TrafficInterface):
 
         if current_lane.type == TypesOfRoad.INTERNAL_LANE:
             vehicle.located_area = LocatedArea.INTERNAL
-            vehicle.current_lane = current_lane
+
         elif SimPlatformAPI.myGetDistanceToLaneEnd(vehicle.id) < 40:
             vehicle.located_area = LocatedArea.ADJACENT_JUNCTION_AREA
-            vehicle.current_lane = current_lane
+
             # if vehicle.driving_mode==DrivingMode.LEFT_CHANGING_LANE or vehicle.driving_mode==DrivingMode.RIGHT_CHANGING_LANE:
             #    MotivateInterface.generate_trajectory_point_set(vehicle)
         else:
             vehicle.located_area = LocatedArea.NORMAL
-            vehicle.current_lane = current_lane
+
 
         return True
 
@@ -535,7 +535,7 @@ class TrafficInterfaceImpl(TrafficInterface):
 
                 left_leader = SimPlatformAPI.myGetLeftLeaderVehicle(vehicle_id)
 
-                current_lane = SimPlatformAPI.myGetLaneID(vehicle.id)
+                current_lane = vehicle.current_lane_id
                 origin_lane = trajectory.continuous_lane_id[0]
 
                 if current_lane != origin_lane:
@@ -562,7 +562,7 @@ class TrafficInterfaceImpl(TrafficInterface):
 
                 right_leader = SimPlatformAPI.myGetRightLeaderVehicle(vehicle_id)
 
-                current_lane = SimPlatformAPI.myGetLaneID(vehicle.id)
+                current_lane = vehicle.current_lane_id
                 origin_lane = trajectory.continuous_lane_id[0]
 
                 if current_lane != origin_lane:

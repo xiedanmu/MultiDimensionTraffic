@@ -710,7 +710,7 @@ class MotivateInterfaceImpl(MotivateInterface):
         """
 
         leader = TrafficInterface.get_leader_vehicle(vehicle.id, trajectory)
-        current_lane = SimPlatformAPI.myGetLaneID(vehicle.id)
+        current_lane = vehicle.current_lane_id
         origin_lane = trajectory.continuous_lane_id[0]
         if leader <= -1:
             if vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE and current_lane == origin_lane:
@@ -1414,7 +1414,7 @@ class MotivateInterfaceImpl(MotivateInterface):
 
         # 开始计算每个仿真步的坐标
         # 变量初始化
-        current_lane_id = SimPlatformAPI.myGetLaneID(vehicle.id)
+        current_lane_id = vehicle.current_lane_id
         cur_lane_max_s = TrafficInterface.myGetLaneLength(current_lane_id)
         is_dead_end = SimPlatformAPI.myIsDeadEnd(current_lane_id)
         s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
@@ -1508,7 +1508,7 @@ class MotivateInterfaceImpl(MotivateInterface):
             connecting_flag = True
             s = trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[-1][3]
         else:
-            cur_lane_id = SimPlatformAPI.myGetLaneID(vehicle.id)
+            cur_lane_id = vehicle.current_lane_id
             connecting_flag = False
             s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
         cur_lane_max_s = TrafficInterface.myGetLaneLength(cur_lane_id)
@@ -1595,13 +1595,15 @@ class MotivateInterfaceImpl(MotivateInterface):
         """根据当前仿真步车辆的速度和在轨迹中的s找到应该更新的点,并删除过期的点"""
 
         if vehicle.is_accidental == True:
+            vehicle.going_to_update_acc = 0
+            vehicle.going_to_update_speed = 0
             return trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0]
 
         acc=vehicle.a_dict[vehicle.next_a_index]
 
         future_acc = cls.get_and_update_accelerator(vehicle, trajectory)
-        vehicle.next_a_index = (vehicle.next_a_index + 1) % vehicle.a_dict.__len__()
-        vehicle.a_dict[vehicle.next_a_index]=future_acc
+        vehicle.a_dict[vehicle.next_a_index] = future_acc
+        vehicle.next_a_index = (vehicle.next_a_index + 1) % vehicle.a_dict.__len__()  #延迟加速度响应的模块
 
         # if vehicle.acc_used_account < 10 and vehicle.acc_used_account > 0:
         #     acc = vehicle.current_acceleration
@@ -1689,7 +1691,7 @@ class MotivateInterfaceImpl(MotivateInterface):
         trajectory = Dao.get_trajectory_by_id(vehicle.id)
         # 开始计算换道轨迹每个仿真步的坐标
         # 变量初始化
-        current_lane = SimPlatformAPI.myGetLaneID(vehicle.id)
+        current_lane = vehicle.current_lane_id
         cur_lane_max_s = TrafficInterface.myGetLaneLength(current_lane)
         s_from_lane_start = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
         if s_from_lane_start > cur_lane_max_s:
@@ -1742,6 +1744,7 @@ class MotivateInterfaceImpl(MotivateInterface):
     @staticmethod
     def generate_point_set_waypoint_by_multi_thread(vehicle: Vehicle, direction, MultiThreadPool):  # todo 需要引入车型来决定换道长度
         trajectory = Dao.get_trajectory_by_id(vehicle.id)
+        trajectory.x_y_laneid_s_l_cums_cuml_yaw_set.clear()
         trajectory.current_continuous_lane_id = []
         # 开始计算换道轨迹每个仿真步的坐标
         # 变量初始化
@@ -1754,7 +1757,7 @@ class MotivateInterfaceImpl(MotivateInterface):
         #     current_lane = myGetLaneID(vehicle.id)
         #     connecting_flag = False
         #     s_from_lane_start = myGetDistanceFromLaneStart(vehicle.id)
-        current_lane = SimPlatformAPI.myGetLaneID(vehicle.id)
+        current_lane = vehicle.current_lane_id
         s_from_lane_start = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
         cur_lane_max_s = TrafficInterface.myGetLaneLength(current_lane)
         if s_from_lane_start > cur_lane_max_s:

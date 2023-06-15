@@ -1,4 +1,6 @@
+import cProfile
 import os
+import pstats
 import sys
 import time
 import platform
@@ -13,6 +15,18 @@ log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 logging.basicConfig(level=logging.WARNING)
 
+#用于性能分析
+pr = cProfile.Profile()
+pr.enable()
+
+def f8(x):
+    ret = "%8.3f" % x
+    if ret != '   0.000':
+        return ret
+    return "%6dµs" % (x * 10000000)
+
+pstats.f8 = f8
+#用于性能分析
 def ModelStart(userdata):
     log.info('python version of Pano is :{} '.format(platform.python_version()))
     log.info("start here")
@@ -54,6 +68,12 @@ def ModelOutput(userdata):
 
 
 def ModelTerminate(userdata):
+
     # export_lane_shape_information(userdata)
     # output_vehicle_data_file()
+    pr.disable()
+    stats = pstats.Stats(pr)
+    stats.sort_stats('cumulative')  # 'cumulative','time'
+    stats.print_stats()
+    stats.dump_stats(filename='C:\\Users\\47551\\Desktop\\temp\\profile\\traci_profiling.prof')
     pass
