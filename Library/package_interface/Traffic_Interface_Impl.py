@@ -7,7 +7,8 @@ from Library.package_entity.Enum_Driving_Mode import DrivingMode
 
 rng = np.random.Generator(np.random.MT19937(1))
 
-from Library.package_platformAPI.SimPlatformAPI import SimPlatformAPI
+# from Library.package_platformAPI.SimPlatformAPI import SimPlatformAPI
+from Library import PanoTrafficApi_Python as PanoTrafficAPI
 from Library.package_entity.Class_Trajectory import Trajectory
 from Library.package_entity.Enum_Direction import Direction
 from Library.package_entity.Enum_Located_Area import LocatedArea
@@ -36,10 +37,10 @@ class TrafficInterfaceImpl(TrafficInterface):
     @staticmethod
     def two_car_distance(car1:int, car2:int) -> float:
         """返回两车的直线距离"""
-        lateral_distance = SimPlatformAPI.myGetVehicleX(car1) - SimPlatformAPI.myGetVehicleX(car2)
+        lateral_distance = PanoTrafficAPI.PanoTrafficApi_GetVehicleX(car1) - PanoTrafficAPI.PanoTrafficApi_GetVehicleX(car2)
 
-        # lateral_distance = SimPlatformAPI.myGetLateralDistance(car1_id, car2_id) 返回了负无穷
-        longitudinal_distance= SimPlatformAPI.myGetVehicleY(car1) - SimPlatformAPI.myGetVehicleY(car2)
+        # lateral_distance = PanoTrafficAPI.PanoTrafficApi_GetLateralDistance(car1_id, car2_id) 返回了负无穷
+        longitudinal_distance= PanoTrafficAPI.PanoTrafficApi_GetVehicleY(car1) - PanoTrafficAPI.PanoTrafficApi_GetVehicleY(car2)
         return pow(longitudinal_distance ** 2 + lateral_distance ** 2, 1 / 2)
 
     # 函数: getXYFromSL
@@ -176,14 +177,14 @@ class TrafficInterfaceImpl(TrafficInterface):
             return False
 
         if dir == Direction.LEFT:  # 左侧
-            tmpID = SimPlatformAPI.myGetLeftLeaderVehicle(vehID)
+            tmpID = PanoTrafficAPI.PanoTrafficApi_GetLeftLeaderVehicle(vehID)
             log.info("GetLeftLeader {}".format(tmpID))
             if (tmpID >= 0) or (tmpID == -1):
                 return True
             else:
                 return False
         elif Direction.RIGHT:  # 右侧
-            tmpID = SimPlatformAPI.myGetRightLeaderVehicle(vehID)
+            tmpID = PanoTrafficAPI.PanoTrafficApi_GetRightLeaderVehicle(vehID)
             log.info("GetRightLeader {}".format(tmpID))
             if (tmpID >= 0) or (tmpID == -1):
                 return True
@@ -210,42 +211,40 @@ class TrafficInterfaceImpl(TrafficInterface):
         right_leader_distance = 0
 
         #路不够长了
-        current_lane_id= SimPlatformAPI.myGetVehicleLane(vehID)
-        if(SimPlatformAPI.myGetLaneLength(current_lane_id) - SimPlatformAPI.myGetDistanceFromLaneStart(vehID))<50:
+        current_lane_id= PanoTrafficAPI.PanoTrafficApi_GetVehicleLane(vehID)
+        if(PanoTrafficAPI.PanoTrafficApi_GetLaneLength(current_lane_id) - PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehID))<50:
             return None
         #todo 检查车道是否存在
         # 先看左侧换道
-        left_lane=SimPlatformAPI.myGetLeftLaneID(vehID)
-        SimPlatformAPI.isLaneExist(left_lane)
-        if SimPlatformAPI.isLaneExist(left_lane):
-            log.info("vehID {}, left lane {}".format(vehID, SimPlatformAPI.myGetLeftLaneID(vehID)))
+        if PanoTrafficAPI.PanoTrafficApi_IsLeftLaneExist(current_lane_id):
+            log.info("vehID {}, left lane {}".format(vehID, PanoTrafficAPI.PanoTrafficApi_GetLeftLaneId(current_lane_id)))
             # 条件A开始检查
-            left_leader_car = SimPlatformAPI.myGetLeftLeaderVehicle(vehID)
+            left_leader_car = PanoTrafficAPI.PanoTrafficApi_GetLeftLeaderVehicle(vehID)
             if left_leader_car <= -1:  # 没有车就直接满足条件a
                 left_check_a = True
             elif left_leader_car >= 0:
-                left_leader_distance = cls.two_car_distance(Dao.vehicle_dictionary[vehID].id, Dao.vehicle_dictionary[left_leader_car].id)
-                left_leader_v = Dao.vehicle_dictionary[left_leader_car].current_speed
+                left_leader_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(left_leader_car,vehID)-PanoTrafficAPI.PanoTrafficApi_GetVehicleParameter(left_leader_car).vehLength
+                left_leader_v = PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(left_leader_car)
 
-                leader_car = SimPlatformAPI.myGetLeaderVehicle(vehID)
+                leader_car = PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehID)
                 if leader_car == -1:
                     if left_leader_distance > 20:
                         left_check_a = True
                 elif leader_car >= 0:
-                    leader_distance = cls.two_car_distance(Dao.vehicle_dictionary[vehID].id, Dao.vehicle_dictionary[leader_car].id)
-                    leader_v = Dao.vehicle_dictionary[leader_car].current_speed
+                    leader_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(leader_car,vehID)-PanoTrafficAPI.PanoTrafficApi_GetVehicleParameter(leader_car).vehLength
+                    leader_v = PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(leader_car)
                     if left_leader_distance > leader_distance and left_leader_v > leader_v:
                         left_check_a = True
             # 条件A检查完毕
 
             # 条件B开始检查
-            left_follow_car = SimPlatformAPI.myGetLeftFollowerVehicle(vehID)
+            left_follow_car = PanoTrafficAPI.PanoTrafficApi_GetLeftFollowerVehicle(vehID)
             if left_follow_car <= -1:
                 left_check_b = True
 
             elif left_follow_car >= 0:
-                required_distance_min = Dao.vehicle_dictionary[left_follow_car].current_speed * 2
-                current_distance = cls.two_car_distance(Dao.vehicle_dictionary[vehID].id, Dao.vehicle_dictionary[left_follow_car].id)
+                required_distance_min = PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(left_follow_car) * 2
+                current_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehID, left_follow_car)-PanoTrafficAPI.PanoTrafficApi_GetVehicleParameter(vehID).vehLength
                 if current_distance >= required_distance_min:
                     left_check_b = True
             # 条件B检查完毕
@@ -255,37 +254,35 @@ class TrafficInterfaceImpl(TrafficInterface):
                 left_check = True
 
         # 再看右侧换道
-        right_lane = SimPlatformAPI.myGetRightLaneID(vehID)
-        SimPlatformAPI.isLaneExist(right_lane)
-        if SimPlatformAPI.isLaneExist(right_lane):
-            log.info("vehID {}, right lane {}".format(vehID, SimPlatformAPI.myGetRightLaneID(vehID)))
+        if PanoTrafficAPI.PanoTrafficApi_IsRightLaneExist(current_lane_id):
+            log.info("vehID {}, right lane {}".format(vehID, PanoTrafficAPI.PanoTrafficApi_GetRightLaneId(current_lane_id)))
             # 条件A开始检查
-            right_leader_car = SimPlatformAPI.myGetRightLeaderVehicle(vehID)
+            right_leader_car = PanoTrafficAPI.PanoTrafficApi_GetRightLeaderVehicle(vehID)
             if right_leader_car <= -1:  # 没有车就直接满足条件a
                 right_check_a = True
             elif right_leader_car >= 0:
-                right_leader_distance = cls.two_car_distance(Dao.vehicle_dictionary[vehID].id, Dao.vehicle_dictionary[right_leader_car].id)
-                right_leader_v = Dao.vehicle_dictionary[right_leader_car].current_speed
+                right_leader_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(right_leader_car,vehID)-PanoTrafficAPI.PanoTrafficApi_GetVehicleParameter(right_leader_car).vehLength
+                right_leader_v = PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(right_leader_car)
 
-                leader_car = SimPlatformAPI.myGetLeaderVehicle(vehID)
+                leader_car = PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehID)
                 if leader_car == -1:
                     if right_leader_distance > 20:
                         right_check_a = True
                 elif leader_car >= 0:
-                    leader_distance = cls.two_car_distance(Dao.vehicle_dictionary[vehID].id, Dao.vehicle_dictionary[leader_car].id)
-                    leader_v = Dao.vehicle_dictionary[leader_car].current_speed
+                    leader_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(leader_car,vehID)-PanoTrafficAPI.PanoTrafficApi_GetVehicleParameter(leader_car).vehLength
+                    leader_v = PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(leader_car)
                     if right_leader_distance > leader_distance and right_leader_v > leader_v:
                         right_check_a = True
             # 条件A检查完毕
 
             # 条件B开始检查
-            right_follow_car = SimPlatformAPI.myGetRightFollowerVehicle(vehID)
+            right_follow_car = PanoTrafficAPI.PanoTrafficApi_GetRightFollowerVehicle(vehID)
             if right_follow_car <= -1:
                 right_check_b = True
 
             elif right_follow_car >= 0:
-                required_distance_min = Dao.vehicle_dictionary[right_follow_car].current_speed * 2
-                current_distance = cls.two_car_distance(Dao.vehicle_dictionary[vehID].id, Dao.vehicle_dictionary[right_follow_car].id)
+                required_distance_min = PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(right_follow_car) * 2
+                current_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehID, right_follow_car)-PanoTrafficAPI.PanoTrafficApi_GetVehicleParameter(vehID).vehLength
                 if current_distance >= required_distance_min:
                     right_check_b = True
             # 条件B检查完毕
@@ -298,9 +295,15 @@ class TrafficInterfaceImpl(TrafficInterface):
         if not right_check and not left_check:
             return None
         elif right_check and left_check:
+            
+            route_dir=PanoTrafficAPI.PanoTrafficApi_GetRoute(vehID)
+            if route_dir ==1:
+                return Direction.LEFT
+            elif route_dir ==2:
+                return Direction.RIGHT
             random_value = rng.integers(0, 9)
 
-            if random_value<5:
+            if random_value<7:
             # if left_leader_distance >= right_leader_distance:
                 return Direction.LEFT
             else:
@@ -339,15 +342,15 @@ class TrafficInterfaceImpl(TrafficInterface):
 
         if current_lane.type == TypesOfRoad.INTERNAL_LANE:
             vehicle.located_area = LocatedArea.INTERNAL
-            vehicle.current_lane = current_lane
-        elif SimPlatformAPI.myGetDistanceToLaneEnd(vehicle.id) < 40:
+
+        elif PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(vehicle.id) < 40:
             vehicle.located_area = LocatedArea.ADJACENT_JUNCTION_AREA
-            vehicle.current_lane = current_lane
+
             # if vehicle.driving_mode==DrivingMode.LEFT_CHANGING_LANE or vehicle.driving_mode==DrivingMode.RIGHT_CHANGING_LANE:
             #    MotivateInterface.generate_trajectory_point_set(vehicle)
         else:
             vehicle.located_area = LocatedArea.NORMAL
-            vehicle.current_lane = current_lane
+
 
         return True
 
@@ -359,11 +362,11 @@ class TrafficInterfaceImpl(TrafficInterface):
     def get_direction_from_lane_to_lane(cls,current_lane_id, next_lane_id):
 
         result_direction=None
-        dirs = SimPlatformAPI.myGetValidDirections(current_lane_id)
+        dirs = PanoTrafficAPI.PanoTrafficApi_GetValidDirections(current_lane_id)
         if (len(dirs) <= 0):
             log.warning("[{}] has no directions".format(current_lane_id))
         for dir in dirs:
-            toLanes = SimPlatformAPI.myGetNextLanes(current_lane_id, dir)
+            toLanes = PanoTrafficAPI.PanoTrafficApi_GetNextLanes(current_lane_id, dir)
 
             if next_lane_id in toLanes:
                 result_direction=dir
@@ -376,7 +379,7 @@ class TrafficInterfaceImpl(TrafficInterface):
     # [o]: int - leader_carID
     @classmethod  # 声明为抽象方法，子类必须重写的方法
     def get_leader_vehicle(cls, vehicle_id,trajectory):
-        leader_id = SimPlatformAPI.myGetLeaderVehicle(vehicle_id)
+        leader_id = PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehicle_id)
 
         vehicle=Dao.get_vehicle_by_id(vehicle_id)
         try:#有主车的情况下，需要try catch
@@ -384,12 +387,12 @@ class TrafficInterfaceImpl(TrafficInterface):
                 current_lane_id = trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0][2]
 
                 # 看一下刚迈出停止线时的情况
-                if SimPlatformAPI.myCheckInternalLane(current_lane_id):
+                if PanoTrafficAPI.PanoTrafficApi_CheckInternalLane(current_lane_id):
                     if leader_id <= -1:
                         current_lane = Dao.lane_dictionary[current_lane_id]
                         previous_lane_id = current_lane.previous_lane[0]
                         previous_lane = Dao.lane_dictionary[previous_lane_id]
-                        my_current_s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle_id)
+                        my_current_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle_id)
                         if previous_lane.type == TypesOfRoad.NORMAL_LANE and my_current_s < 20:
                             all_next_lanes = previous_lane.next_lane
 
@@ -398,9 +401,9 @@ class TrafficInterfaceImpl(TrafficInterface):
                             for next_lane_each in all_next_lanes:
                                 if next_lane_each == current_lane_id:
                                     continue
-                                next_lane_vehicles = SimPlatformAPI.myGetLaneVehicles(next_lane_each)
+                                next_lane_vehicles = PanoTrafficAPI.PanoTrafficApi_GetVehicleListInLane(next_lane_each)
                                 for item in next_lane_vehicles:
-                                    distance_from_lane_start = SimPlatformAPI.myGetDistanceFromLaneStart(item)
+                                    distance_from_lane_start = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(item)
                                     if distance_from_lane_start < temp and distance_from_lane_start > my_current_s:
                                         temp = distance_from_lane_start
                                         target_vehicle = item
@@ -412,7 +415,7 @@ class TrafficInterfaceImpl(TrafficInterface):
                             current_lane = Dao.lane_dictionary[current_lane_id]
                             previous_lane_id = current_lane.previous_lane[0]
                             previous_lane = Dao.lane_dictionary[previous_lane_id]
-                            my_current_s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle_id)
+                            my_current_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle_id)
                             if previous_lane.type == TypesOfRoad.NORMAL_LANE and my_current_s < 20:
                                 all_next_lanes = previous_lane.next_lane
 
@@ -421,11 +424,11 @@ class TrafficInterfaceImpl(TrafficInterface):
                                 for next_lane_each in all_next_lanes:
                                     if next_lane_each == current_lane_id:
                                         continue
-                                    next_lane_vehicles = SimPlatformAPI.myGetLaneVehicles(next_lane_each)
+                                    next_lane_vehicles = PanoTrafficAPI.PanoTrafficApi_GetVehicleListInLane(next_lane_each)
                                     for item in next_lane_vehicles:
-                                        distance_from_lane_start = SimPlatformAPI.myGetDistanceFromLaneStart(item)
+                                        distance_from_lane_start = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(item)
                                         if distance_from_lane_start < temp and distance_from_lane_start > my_current_s and \
-                                                distance_from_lane_start < SimPlatformAPI.myGetDistanceFromLaneStart(
+                                                distance_from_lane_start < PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(
                                             leader_id):
                                             temp = distance_from_lane_start
                                             target_vehicle = item
@@ -434,23 +437,23 @@ class TrafficInterfaceImpl(TrafficInterface):
                                     return target_vehicle
 
                 # 看一下在接近lane end处且有next_lane的情况
-                if leader_id <= -1 and not SimPlatformAPI.myIsDeadEnd(current_lane_id) and Dao.lane_dictionary[
+                if leader_id <= -1 and not PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id) and Dao.lane_dictionary[
                     current_lane_id].next_lane and \
-                        SimPlatformAPI.myGetDistanceToLaneEnd(vehicle_id) < 10:  # 前方没有车
+                        PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(vehicle_id) < 10:  # 前方没有车
                     all_next_lanes = cls.get_all_next_lane(trajectory)
                     target_vehicle = -1
                     temp = 100
                     next_next_lanes = []
                     for next_lane_each in all_next_lanes:
-                        if SimPlatformAPI.myCheckInternalLane(next_lane_each):
+                        if PanoTrafficAPI.PanoTrafficApi_CheckInternalLane(next_lane_each):
                             next_next_lane = Dao.lane_dictionary[next_lane_each].next_lane
                             if next_next_lane:
                                 next_next_lanes.append(next_next_lane[0])
 
-                        next_lane_vehicles = SimPlatformAPI.myGetLaneVehicles(next_lane_each)
+                        next_lane_vehicles = PanoTrafficAPI.PanoTrafficApi_GetVehicleListInLane(next_lane_each)
 
                         for item in next_lane_vehicles:
-                            distance_from_lane_start = SimPlatformAPI.myGetDistanceFromLaneStart(item)
+                            distance_from_lane_start = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(item)
                             if distance_from_lane_start < temp:
                                 temp = distance_from_lane_start
                                 target_vehicle = item
@@ -458,10 +461,10 @@ class TrafficInterfaceImpl(TrafficInterface):
                     # 在internal lane中没有找到
                     if target_vehicle == -1:
                         for next_lane_each in next_next_lanes:
-                            next_lane_vehicles = SimPlatformAPI.myGetLaneVehicles(next_lane_each)
+                            next_lane_vehicles = PanoTrafficAPI.PanoTrafficApi_GetVehicleListInLane(next_lane_each)
 
                             for item in next_lane_vehicles:
-                                distance_from_lane_start = SimPlatformAPI.myGetDistanceFromLaneStart(item)
+                                distance_from_lane_start = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(item)
                                 if distance_from_lane_start < temp:
                                     temp = distance_from_lane_start
                                     target_vehicle = item
@@ -470,35 +473,35 @@ class TrafficInterfaceImpl(TrafficInterface):
                         return target_vehicle
 
                 # 不在离路口10米内，且不是死路，需要观察左右换道的车
-                left_leader = SimPlatformAPI.myGetLeftLeaderVehicle(vehicle_id)
-                right_leader = SimPlatformAPI.myGetRightLeaderVehicle(vehicle_id)
+                left_leader = PanoTrafficAPI.PanoTrafficApi_GetLeftLeaderVehicle(vehicle_id)
+                right_leader = PanoTrafficAPI.PanoTrafficApi_GetRightLeaderVehicle(vehicle_id)
 
                 if leader_id > -1:
                     temp_leader = leader_id
-                    leader_distance = cls.two_car_distance(vehicle_id,
-                                                           leader_id) - SimPlatformAPI.myGetVehicleLength(leader_id)
+                    leader_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle_id,
+                                                           leader_id) - TrafficInterface.get_vehicle_length(leader_id)
                     if left_leader > 0 and Dao.vehicle_dictionary[
                         left_leader].driving_mode == DrivingMode.RIGHT_CHANGING_LANE:
-                        left_leader_distance = cls.two_car_distance(vehicle_id,
-                                                                    left_leader) - SimPlatformAPI.myGetVehicleLength(
+                        left_leader_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle_id,
+                                                                    left_leader) - TrafficInterface.get_vehicle_length(
                             left_leader)
-                        if left_leader_distance < leader_distance: #and SimPlatformAPI.myGetVehicleSpeed(
-                                #vehicle_id) < SimPlatformAPI.myGetVehicleSpeed(left_leader):
+                        if left_leader_distance < leader_distance: #and PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(
+                                #vehicle_id) < PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(left_leader):
                             leader_distance = left_leader_distance
                             temp_leader = left_leader
 
                     if right_leader > 0 and Dao.vehicle_dictionary[
                         right_leader].driving_mode == DrivingMode.LEFT_CHANGING_LANE:
-                        right_leader_distance = cls.two_car_distance(vehicle_id,
-                                                                     leader_id) - SimPlatformAPI.myGetVehicleLength(
+                        right_leader_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle_id,
+                                                                     leader_id) - TrafficInterface.get_vehicle_length(
                             right_leader)
-                        if right_leader_distance < leader_distance:# and SimPlatformAPI.myGetVehicleSpeed(
-                                #vehicle_id) < SimPlatformAPI.myGetVehicleSpeed(right_leader):
+                        if right_leader_distance < leader_distance:# and PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(
+                                #vehicle_id) < PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(right_leader):
                             leader_distance = right_leader_distance
                             temp_leader = right_leader
 
                     # # 如果离得太近了，直行车道就不用避让变道的车
-                    # if leader_distance < SimPlatformAPI.myGetVehicleLength(temp_leader) + 5:
+                    # if leader_distance < TrafficInterface.get_vehicle_length(temp_leader) + 5:
                     #     return leader_id
                     # else:
                     #     return temp_leader
@@ -510,22 +513,22 @@ class TrafficInterfaceImpl(TrafficInterface):
                     leader_distance = 100
                     if left_leader > 0 and Dao.vehicle_dictionary[
                         left_leader].driving_mode == DrivingMode.RIGHT_CHANGING_LANE:
-                        left_leader_distance = cls.two_car_distance(vehicle_id,
-                                                                    left_leader) - SimPlatformAPI.myGetVehicleLength(
+                        left_leader_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle_id,
+                                                                    left_leader) - TrafficInterface.get_vehicle_length(
                             left_leader)
 
-                        if left_leader_distance < leader_distance and SimPlatformAPI.myGetVehicleSpeed(
-                                vehicle_id) < SimPlatformAPI.myGetVehicleSpeed(left_leader):
+                        if left_leader_distance < leader_distance and PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(
+                                vehicle_id) < PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(left_leader):
                             leader_distance = left_leader_distance
                             temp_leader = left_leader
 
                     if right_leader > 0 and Dao.vehicle_dictionary[
                         right_leader].driving_mode == DrivingMode.LEFT_CHANGING_LANE:
-                        right_leader_distance = cls.two_car_distance(vehicle_id,
-                                                                     right_leader) - SimPlatformAPI.myGetVehicleLength(
+                        right_leader_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle_id,
+                                                                     right_leader) - TrafficInterface.get_vehicle_length(
                             right_leader)
-                        if right_leader_distance < leader_distance and SimPlatformAPI.myGetVehicleSpeed(
-                                vehicle_id) < SimPlatformAPI.myGetVehicleSpeed(right_leader):
+                        if right_leader_distance < leader_distance and PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(
+                                vehicle_id) < PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(right_leader):
                             leader_distance = right_leader_distance
                             temp_leader = right_leader
 
@@ -533,9 +536,9 @@ class TrafficInterfaceImpl(TrafficInterface):
 
             elif vehicle.driving_mode == DrivingMode.LEFT_CHANGING_LANE:
 
-                left_leader = SimPlatformAPI.myGetLeftLeaderVehicle(vehicle_id)
+                left_leader = PanoTrafficAPI.PanoTrafficApi_GetLeftLeaderVehicle(vehicle_id)
 
-                current_lane = SimPlatformAPI.myGetLaneID(vehicle.id)
+                current_lane = vehicle.current_lane_id
                 origin_lane = trajectory.continuous_lane_id[0]
 
                 if current_lane != origin_lane:
@@ -545,11 +548,11 @@ class TrafficInterfaceImpl(TrafficInterface):
                     if leader_id <= -1:
                         return left_leader
                     else:
-                        leader_distance = cls.two_car_distance(vehicle_id,
-                                                               leader_id) - SimPlatformAPI.myGetVehicleLength(
+                        leader_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle_id,
+                                                               leader_id) - TrafficInterface.get_vehicle_length(
                             leader_id)
-                        left_leader_distance = cls.two_car_distance(vehicle_id,
-                                                                    left_leader) - SimPlatformAPI.myGetVehicleLength(
+                        left_leader_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle_id,
+                                                                    left_leader) - TrafficInterface.get_vehicle_length(
                             left_leader)
                         if left_leader_distance < leader_distance:
                             return left_leader
@@ -560,9 +563,9 @@ class TrafficInterfaceImpl(TrafficInterface):
 
             elif vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE:
 
-                right_leader = SimPlatformAPI.myGetRightLeaderVehicle(vehicle_id)
+                right_leader = PanoTrafficAPI.PanoTrafficApi_GetRightLeaderVehicle(vehicle_id)
 
-                current_lane = SimPlatformAPI.myGetLaneID(vehicle.id)
+                current_lane = vehicle.current_lane_id
                 origin_lane = trajectory.continuous_lane_id[0]
 
                 if current_lane != origin_lane:
@@ -572,11 +575,11 @@ class TrafficInterfaceImpl(TrafficInterface):
                     if leader_id <= -1:
                         return right_leader
                     else:
-                        leader_distance = cls.two_car_distance(vehicle_id,
-                                                               leader_id) - SimPlatformAPI.myGetVehicleLength(
+                        leader_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle_id,
+                                                               leader_id) - TrafficInterface.get_vehicle_length(
                             leader_id)
-                        right_leader_distance = cls.two_car_distance(vehicle_id,
-                                                                     right_leader) - SimPlatformAPI.myGetVehicleLength(
+                        right_leader_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle_id,
+                                                                     right_leader) - TrafficInterface.get_vehicle_length(
                             right_leader)
                         if right_leader_distance < leader_distance:
                             return right_leader
@@ -585,7 +588,7 @@ class TrafficInterfaceImpl(TrafficInterface):
                 else:
                     return leader_id
         except:
-            return -1
+            return leader_id
 
 
     # 函数: get_next_lane
@@ -613,7 +616,7 @@ class TrafficInterfaceImpl(TrafficInterface):
     target_lane_id_list_per_step=[]
     total_lane_length = 0   #需要存内存的数据
     initial_done=0
-    max_vehicle_num=99
+    max_vehicle_num=1000
     @classmethod
     def vehicle_generation(cls, generateMode=0, initial_density=0, arrivePossible=0):
         """
@@ -632,8 +635,8 @@ class TrafficInterfaceImpl(TrafficInterface):
             """
             if cls.total_lane_length==0:
                 for lane in Dao.lane_dictionary.values():
-                    if lane.type == TypesOfRoad.NORMAL_LANE:# and not SimPlatformAPI.myIsDeadEnd(lane.id): #禁止deadend
-                        cls.total_lane_length += SimPlatformAPI.myGetLaneLength(lane.id)
+                    if lane.type == TypesOfRoad.NORMAL_LANE:# and not PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(lane.id): #禁止deadend
+                        cls.total_lane_length += PanoTrafficAPI.PanoTrafficApi_GetLaneLength(lane.id)
 
             return cls.total_lane_length
 
@@ -655,7 +658,7 @@ class TrafficInterfaceImpl(TrafficInterface):
             """
             if cls.target_lane_id_list_per_step==[]:
                 for lane in Dao.lane_dictionary.values():
-                    if lane.type == TypesOfRoad.NORMAL_LANE and not SimPlatformAPI.myIsDeadEnd(lane.id) and len(Dao.lane_dictionary[lane.id].previous_lane)==0: #禁止deadend
+                    if lane.type == TypesOfRoad.NORMAL_LANE and not PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(lane.id) and len(Dao.lane_dictionary[lane.id].previous_lane)==0: #禁止deadend
                         cls.target_lane_id_list_per_step.append(lane.id)
 
                 if cls.target_lane_id_list_per_step==[]:
@@ -677,7 +680,7 @@ class TrafficInterfaceImpl(TrafficInterface):
                 index=0
                 target_lane_id = target_lane_id_list_temp[index]
                 for i in range(num - num_of_vehicle_now):
-                    if current_s> SimPlatformAPI.myGetLaneLength(target_lane_id):
+                    if current_s> PanoTrafficAPI.PanoTrafficApi_GetLaneLength(target_lane_id):
                         index += 1
                         current_s = rng.integers(2, 10)
                         if index >= len(target_lane_id_list_temp):
@@ -688,9 +691,9 @@ class TrafficInterfaceImpl(TrafficInterface):
                     try:
                         (x, y) = cls.getXYFromSL(target_lane_id, current_s, 0)
                         # TODO speed需要设计
-                        SimPlatformAPI.myAddVehicle(x=x, y=y, current_s=current_s,lane_id=target_lane_id,speed=0, type=rng.integers(1, 4))
+                        PanoTrafficAPI.PanoTrafficApi_AddVehicle(x=x, y=y, current_s=current_s,lane_id=target_lane_id,speed=0, type=rng.integers(1, 4))
                     except:
-                        print('can\'t calculate x and y or something wrong with AddVehicle ')
+                        log.info('can\'t calculate x and y or something wrong with AddVehicle ')
                     else:
                         current_s+=total_length/rng.integers(num,num+10)
                         # if index >= len(target_lane_id_list_temp):
@@ -707,12 +710,12 @@ class TrafficInterfaceImpl(TrafficInterface):
                 index = rng.integers(0,len(target_lane_id_list_temp))
                 target_lane_id = target_lane_id_list_temp[index]
                 for i in range(num - num_of_vehicle_now):
-                    if current_s > SimPlatformAPI.myGetLaneLength(target_lane_id):
+                    if current_s > PanoTrafficAPI.PanoTrafficApi_GetLaneLength(target_lane_id):
                         index += 1
                         current_s=0
                     target_lane_id = target_lane_id_list_temp[index]
                     (x, y) = cls.getXYFromSL(target_lane_id, current_s, 0)
-                    SimPlatformAPI.myAddVehicle(x=x, y=y, current_s=current_s,lane_id=target_lane_id,speed=0, type=rng.integers(1, 4))
+                    PanoTrafficAPI.PanoTrafficApi_AddVehicle(x=x, y=y, current_s=current_s,lane_id=target_lane_id,speed=0, type=rng.integers(1, 4))
                     index += 1
                     if index >= len(target_lane_id_list_temp):
                         index = 0
@@ -723,7 +726,7 @@ class TrafficInterfaceImpl(TrafficInterface):
             target_lane_id_list=get_target_lanes_each_step()
             target_lane_id = rng.choice(target_lane_id_list)
             (x,y)=cls.getXYFromSL(target_lane_id,current_s,0)
-            SimPlatformAPI.myAddVehicle(x=x, y=y, current_s=current_s,lane_id=target_lane_id,speed=0, type=rng.integers(1, 4))
+            PanoTrafficAPI.PanoTrafficApi_AddVehicle(x=x, y=y, current_s=current_s,lane_id=target_lane_id,speed=0, type=rng.integers(1, 4))
 
 
         if generateMode==0: #开放性边界条件
@@ -735,7 +738,7 @@ class TrafficInterfaceImpl(TrafficInterface):
             elif cls.initial_done==1:
                 n=rng.random() #生成0到1之间的浮点数
                 # if arrivePossible>1:
-                #     print('arrivePossible 只能介于0和1之间')
+                #     log.info('arrivePossible 只能介于0和1之间')
                 #     raise ValueError
                 if n<arrivePossible/100: #一秒钟之内有arrivePossible这么大的可能性进车，10ms一个仿真步
                     convert_to_vehicles_in_possibility()
@@ -753,7 +756,7 @@ class TrafficInterfaceImpl(TrafficInterface):
                 convert_to_vehicles_per_step(num)
             return
         else:
-            print('generateMode 只能是1或者0')
+            log.info('generateMode 只能是1或者0')
             raise ValueError
 
         raise NotImplementedError
@@ -781,8 +784,8 @@ class TrafficInterfaceImpl(TrafficInterface):
             """
             if cls.total_lane_length==0:
                 for lane in Dao.lane_dictionary.values():
-                    if lane.type == TypesOfRoad.NORMAL_LANE:# and not SimPlatformAPI.myIsDeadEnd(lane.id): #禁止deadend
-                        cls.total_lane_length += SimPlatformAPI.myGetLaneLength(lane.id)
+                    if lane.type == TypesOfRoad.NORMAL_LANE:# and not PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(lane.id): #禁止deadend
+                        cls.total_lane_length += PanoTrafficAPI.PanoTrafficApi_GetLaneLength(lane.id)
 
             return cls.total_lane_length
 
@@ -804,7 +807,7 @@ class TrafficInterfaceImpl(TrafficInterface):
             """
             if cls.target_lane_id_list_per_step==[]:
                 for lane in Dao.lane_dictionary.values():
-                    if lane.type == TypesOfRoad.NORMAL_LANE and not SimPlatformAPI.myIsDeadEnd(lane.id) and len(Dao.lane_dictionary[lane.id].previous_lane)==0: #禁止deadend
+                    if lane.type == TypesOfRoad.NORMAL_LANE and not PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(lane.id) and len(Dao.lane_dictionary[lane.id].previous_lane)==0: #禁止deadend
                         cls.target_lane_id_list_per_step.append(lane.id)
 
                 if cls.target_lane_id_list_per_step==[]:
@@ -826,7 +829,7 @@ class TrafficInterfaceImpl(TrafficInterface):
                 index=0
                 target_lane_id = target_lane_id_list_temp[index]
                 for i in range(num - num_of_vehicle_now):
-                    if current_s> SimPlatformAPI.myGetLaneLength(target_lane_id):
+                    if current_s> PanoTrafficAPI.PanoTrafficApi_GetLaneLength(target_lane_id):
                         index += 1
                         current_s = rng.integers(2, 10)
                         if index >= len(target_lane_id_list_temp):
@@ -836,9 +839,9 @@ class TrafficInterfaceImpl(TrafficInterface):
                     target_lane_id = target_lane_id_list_temp[index]
                     try:
                         (x, y) = cls.getXYFromSL(target_lane_id, current_s, 0)
-                        SimPlatformAPI.myAddVehicle(x=x, y=y, current_s=current_s,lane_id=target_lane_id,speed=0, type=rng.integers(1, 4))
+                        PanoTrafficAPI.PanoTrafficApi_AddVehicle(x=x, y=y, current_s=current_s,lane_id=target_lane_id,speed=0, type=rng.integers(1, 4))
                     except:
-                        print('can\'t calculate x and y or something wrong with AddVehicle ')
+                        log.info('can\'t calculate x and y or something wrong with AddVehicle ')
                     else:
                         current_s+=total_length/rng.integers(num,num+10)
                         # if index >= len(target_lane_id_list_temp):
@@ -852,12 +855,12 @@ class TrafficInterfaceImpl(TrafficInterface):
             index = rng.integers(0, len(target_lane_id_list_temp))
             target_lane_id = target_lane_id_list_temp[index]
             for i in range(num):
-                if current_s > SimPlatformAPI.myGetLaneLength(target_lane_id):
+                if current_s > PanoTrafficAPI.PanoTrafficApi_GetLaneLength(target_lane_id):
                     index += 1
                     current_s = 0
                 target_lane_id = target_lane_id_list_temp[index]
                 (x, y) = cls.getXYFromSL(target_lane_id, current_s, 0)
-                SimPlatformAPI.myAddVehicle(x=x, y=y, current_s=current_s,lane_id=target_lane_id,speed=0, type=rng.integers(1, 4))
+                PanoTrafficAPI.PanoTrafficApi_AddVehicle(x=x, y=y, current_s=current_s,lane_id=target_lane_id,speed=0, type=rng.integers(1, 4))
                 index += 1
                 if index >= len(target_lane_id_list_temp):
                     index = 0
@@ -883,3 +886,158 @@ class TrafficInterfaceImpl(TrafficInterface):
 
         return
 
+
+    # 函数: update_vehicle_driving_state
+    # 用途: 更新车辆所在的区域和驾驶状态
+    # [i]: Vehicle - 汽车类
+    # [o]: None
+    @classmethod
+    def update_vehicle_driving_state(cls,vehicle):
+        
+        current_lane_id = PanoTrafficAPI.PanoTrafficApi_GetVehicleLane(vehicle.id)
+        vehicle.current_lane_id=current_lane_id
+        cur_lane_max_s = PanoTrafficAPI.PanoTrafficApi_GetLaneLength(current_lane_id)
+        is_dead_end = PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id)
+        
+        s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
+        if current_lane_id is not None and s > cur_lane_max_s:
+            s = cur_lane_max_s
+        elif s <= 0:
+            s = 0
+
+        if current_lane_id is not None and is_dead_end and (cur_lane_max_s - s) < 1:
+            vehicle.is_xy_v_updated_lastT = True
+            vehicle.ignored = True
+            return
+
+        trajectory = Dao.get_trajectory_by_id(vehicle.id) #为了获取此类中的一些参数，并不会计算轨迹
+
+        current_lane = Dao.lane_dictionary[current_lane_id]
+
+        #先获取一下车辆的驾驶状态
+        drivingmode=PanoTrafficAPI.PanoTrafficApi_GetVehicleIsLaneChanging(vehicle.id)
+        if drivingmode ==0:
+            vehicle.set_driving_mode(DrivingMode.FOLLOW_DRIVING)
+            vehicle.sent_lane_change_cmd=False
+        elif drivingmode==1 or drivingmode==2:
+            vehicle.set_driving_mode(DrivingMode.LEFT_CHANGING_LANE)
+        elif drivingmode==-1 or drivingmode==-2:
+            vehicle.set_driving_mode(DrivingMode.RIGHT_CHANGING_LANE)
+
+        # # 特殊逻辑，应对3车道变两车道
+        # if not PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id) and not current_lane.next_lane and vehicle.driving_mode==DrivingMode.FOLLOW_DRIVING:
+        #     trajectory.x_y_laneid_s_l_cums_cuml_yaw_set=[]
+        #     continue
+
+        # 区域设置
+        if current_lane.type == TypesOfRoad.INTERNAL_LANE:  # 现在判断lane的类型除了lane类中的type字段外，还可以用类本身是不是internal_lane
+            vehicle.located_area = LocatedArea.INTERNAL
+        elif not PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id) and not current_lane.next_lane:  # 对应高速匝道向主干道会车(干道上的辅助汇入车道)
+            vehicle.located_area = LocatedArea.NORMAL
+            if PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(
+                    vehicle.id) < 5 + 2 * vehicle.random_coefficients or PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(
+                vehicle.id) < vehicle.current_speed / 3.6 * trajectory.change_lane_needed_time:  # 修复车道连接处 车道判定不一致的问题
+                # rng.integers(10, 15)是为了不要刚出匝道就汇入主干道
+                pass
+            elif not vehicle.driving_mode == DrivingMode.LEFT_CHANGING_LANE and not vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE:
+                left_lane_id = PanoTrafficAPI.PanoTrafficApi_GetLeftLaneId(current_lane_id)
+                if left_lane_id != '' and Dao.lane_dictionary[left_lane_id].next_lane:
+                    vehicle.located_area = LocatedArea.FORCE_CHANGE_TO_LEFT
+                    trajectory.delete_trajectory_data()  # 需要强制换道了
+                else:
+                    right_lane_id = PanoTrafficAPI.PanoTrafficApi_GetRightLaneId(current_lane_id)
+                    if right_lane_id != '' and Dao.lane_dictionary[right_lane_id].next_lane:
+                        vehicle.located_area = LocatedArea.FORCE_CHANGE_TO_RIGHT
+                        trajectory.delete_trajectory_data()  # 需要强制换道了 TODO 这样直接删除 会导致拼接trajectory没有数据可用
+        elif PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(vehicle.id) < 60:
+            vehicle.located_area = LocatedArea.ADJACENT_JUNCTION_AREA
+            # if vehicle.driving_mode==DrivingMode.LEFT_CHANGING_LANE or vehicle.driving_mode==DrivingMode.RIGHT_CHANGING_LANE:
+            #    MotivateInterface.generate_trajectory_point_set(vehicle)
+        else:
+            vehicle.located_area = LocatedArea.NORMAL
+        # 判断冲突区域结束  """当前道路的种类会影响到选择加速度更新方式，默认为normal方式"""
+
+
+        #**********************从这里开始更新车辆实例的dricing_mode**********************#
+        if vehicle.driving_mode is None:
+            vehicle.set_driving_mode(DrivingMode.FOLLOW_DRIVING)
+        
+        # # 特殊逻辑，应对3车道变两车道
+        # elif not PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id) and not current_lane.next_lane:
+        #     vehicle.set_driving_mode(DrivingMode.RIGHT_CHANGING_LANE)
+
+
+        # 强制换道
+        elif vehicle.located_area == LocatedArea.FORCE_CHANGE_TO_LEFT:
+            vehicle.set_driving_mode(DrivingMode.LEFT_CHANGING_LANE)
+        elif vehicle.located_area == LocatedArea.FORCE_CHANGE_TO_RIGHT:
+            vehicle.set_driving_mode(DrivingMode.RIGHT_CHANGING_LANE)
+        
+        # 换道需求判断
+        elif vehicle.driving_mode == DrivingMode.FOLLOW_DRIVING:
+            if vehicle.located_area != LocatedArea.ADJACENT_JUNCTION_AREA:
+                random_value = rng.integers(0, 1000)
+                if random_value > 990:
+                    direction = cls.get_free_change_lane_direction(vehicle.id)
+                    if direction is not None:
+                        if direction == Direction.LEFT:
+                            vehicle.set_driving_mode(DrivingMode.LEFT_CHANGING_LANE)
+                        elif direction == Direction.RIGHT:
+                            vehicle.set_driving_mode(DrivingMode.RIGHT_CHANGING_LANE)
+                    else:
+                        log.info("get_free_change_lane_direction return None,keep FOLLOW_DRIVING,car_id:{}".format(vehicle.id))
+        
+        # # 之前换过道了就别换了
+        # elif vehicle.driving_mode == DrivingMode.LEFT_CHANGING_LANE or vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE:
+        #     vehicle.set_driving_mode(DrivingMode.FOLLOW_DRIVING)
+        #**********************更新车辆实例的dricing_mode结束**********************#
+
+
+    # 函数: set_link_in_change_lane
+    # 用途: 存储前后车位置关系
+    # [i]: int - 汽车ID,int - leaderID
+    # [o]: None
+    @classmethod
+    def set_link_in_change_lane(cls,vehicle_id,leader):
+        Dao.dicLeaderLink[vehicle_id]=leader
+    
+    # 函数: get_link_in_change_lane
+    # 用途: 获取前后车位置关系
+    # [i]: int - 汽车ID,int - leaderID
+    # [o]: None
+    @classmethod
+    def get_link_in_change_lane(cls,vehicle_id):
+        try:
+            leader_id = Dao.dicLeaderLink[vehicle_id]
+        except:
+            return -1
+        else:
+            return leader_id
+
+    # 函数: get_link_in_change_lane
+    # 用途: 删除前后车位置关系
+    # [i]: int - 汽车ID,int - leaderID
+    # [o]: None
+    @classmethod
+    def del_link_in_change_lane(cls,vehicle_id):
+        del Dao.dicLeaderLink[vehicle_id]
+
+    # 函数: get_vehicle_width
+    # 用途: 获取车辆宽度
+    # [i]: int - 汽车ID
+    # [o]: float
+    @classmethod
+    def get_vehicle_width(cls,vehicle_id):
+        
+        car_info=PanoTrafficAPI.PanoTrafficApi_GetVehicleParameter(vehicle_id)
+        return car_info.vehWidth
+    
+    # 函数: get_vehicle_length
+    # 用途: 获取车辆长度
+    # [i]: int - 汽车ID
+    # [o]: float
+    @classmethod
+    def get_vehicle_length(cls,vehicle_id):
+        
+        car_info=PanoTrafficAPI.PanoTrafficApi_GetVehicleParameter(vehicle_id)
+        return car_info.vehLength

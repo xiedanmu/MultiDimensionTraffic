@@ -38,5 +38,5 @@ class MotivateInterface(metaclass=ABCMeta):
         return
 
     @abstractmethod  # 声明为抽象方法，子类必须重写的方法
-    def move_to(cls,vehID, x, y, yaw,lane,s,l):
+    def move_to(cls,vehID, x, y, yaw,lane,s,l,speed):
         return

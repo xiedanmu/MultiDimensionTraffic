@@ -10,7 +10,7 @@ log.addHandler(logging.NullHandler())
 
 
 class SumoAPI:
-    net = None# sumolib.net.readNet('hello.net.xml.backup',withInternal=True) # It will be uesd among several functions
+    net = None# sumolib.net.readNet('hello.net.xml.backup2.backup',withInternal=True) # It will be uesd among several functions
 
     @classmethod
     def setNetFileInAbPath(cls,dir_str):
@@ -125,8 +125,8 @@ class SumoAPI:
                     break
             if len(foeLanes) > 0:
                 g_dicLaneToFoeLanes[i] = foeLanes
-        # print("Foe Lanes")
-        # print(g_dicLaneFoeLanes)
+        # log.info("Foe Lanes")
+        # log.info(g_dicLaneFoeLanes)
 
     # 函数：myGetLaneToFoeLanes
     # 用途：获得车道去向的敌对车道 不包括相交车道
@@ -198,7 +198,7 @@ class SumoAPI:
     # [i]: typeId - 车辆类型
     # [o]: float - 车辆宽度
     @staticmethod
-    def getVehicleWidth(typeId):
+    def myGetVehicleWidthByType(typeId):
         if typeId == 1:
             return 2.1  # CheryTiggoSUV
         elif typeId == 2:
@@ -736,16 +736,16 @@ class SumoAPI:
             #         traci.vehicle.setColor(vehID,(255,0,0))
             #         route=traci.vehicle.getRoute(vehID)
             #         traci.vehicle.setRoute(vehID,['-L5','m4'])
-            #         print('old route:',route)
+            #         log.info('old route:',route)
             #         route = traci.vehicle.getRoute(vehID)
-            #         print('new route:',route)
+            #         log.info('new route:',route)
             result = traci.simulation.convertRoad(x,y) #返回来的参数第一个是edgeID，第二个是s值，第三个是index
             #edgeId=traci.vehicle.getRoadID(vehID)
-            traci.vehicle.moveToXY(vehID=str(vehID),x=x,y=y,edgeID=result[0],lane=result[2],angle=yaw)
+            traci.vehicle.moveToXY(vehID=str(vehID),x=x,y=y,edgeID=result[0],lane=result[2],angle=yaw,keepRoute=0)
         except:
 
             lane_id=cls.myGetLaneID(str(vehID))
-            print('lane id is:',lane_id,'of vehicle:',vehID,'move to not work,pls check')
+            log.info('lane id is:',lane_id,'of vehicle:',vehID,'move to not work,pls check')
         #
         # if (cls.myIsDeadEnd(curLaneID)):
         #     station = cls.myGetDistanceFromLaneStart(vehID)
@@ -784,7 +784,7 @@ class SumoAPI:
     #     return traj_in_world
     #
     # @classmethod
-    # def mySetValidRoute(cls,vehID, printFlag=False):
+    # def mySetValidRoute(cls,vehID, log.infoFlag=False):
     #     laneID = cls.myGetLaneID(vehID)
     #     if (laneID == ""): return False
     #     potentialDirs = cls.myGetValidDirections(laneID)
@@ -792,9 +792,9 @@ class SumoAPI:
     #     if (len(potentialDirs) > 0):
     #         dir = potentialDirs[int(cls.myGetRandomDouble(0, len(potentialDirs) - 1))]
     #     cls.myChangeRoute(vehID, cls.route_type(dir))
-    #     if (printFlag == True):
-    #         print("FromLane:", laneID, "Valid Dirs:", potentialDirs)
-    #         print("SetRoute", dir)
+    #     if (log.infoFlag == True):
+    #         log.info("FromLane:", laneID, "Valid Dirs:", potentialDirs)
+    #         log.info("SetRoute", dir)
     #     return True
     #
     # @staticmethod
@@ -872,12 +872,12 @@ class SumoAPI:
 
         ConflictPointQueueFin = [ConflictPointQueueFin1, ConflictPointQueueFin2]
 
-        # print('2222',ConflictPointQueue)
-        # print('6666',ConflictPointQueueFin)
+        # log.info('2222',ConflictPointQueue)
+        # log.info('6666',ConflictPointQueueFin)
         # for i in ConflictPointQueueFin[0]:
-        #     print("7777",myGetVehicleX(i))
+        #     log.info("7777",myGetVehicleX(i))
         # for i in ConflictPointQueueFin[1]:
-        #     print("8888", myGetVehicleX(i))
+        #     log.info("8888", myGetVehicleX(i))
 
         # 获取冲突点前前的两个车队序列【0：主干道序列，1：匝道系列】
         return ConflictPointQueueFin
@@ -957,7 +957,7 @@ class SumoAPI:
         # try:
         #     traci.vehicle.setSpeed(car_id, current_speed)
         # except:
-        #     print(car_id+' change speed fail')
+        #     log.info(car_id+' change speed fail')
         traci.vehicle.setSpeed(str(car_id), current_speed)
 
     @staticmethod
@@ -1042,7 +1042,7 @@ class SumoAPI:
                               departPos=current_s,departSpeed=str(speed))
             cls.auto_increment_veh_id += 1
         except:
-            print('myAddVehicle wrong')
+            log.info('myAddVehicle wrong')
 
     @classmethod
     def mySetRoute(cls,veh_id, route):

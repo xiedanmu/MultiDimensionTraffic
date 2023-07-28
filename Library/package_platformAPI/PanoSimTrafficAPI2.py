@@ -150,8 +150,8 @@ class PanoAPI:
                     break
             if len(foeLanes) > 0:
                 g_dicLaneToFoeLanes[i] = foeLanes
-        # print("Foe Lanes")
-        # print(g_dicLaneFoeLanes)
+        # log.info("Foe Lanes")
+        # log.info(g_dicLaneFoeLanes)
 
     # 函数：myGetLaneToFoeLanes
     # 用途：获得车道去向的敌对车道 todo:不包括相交车道
@@ -223,7 +223,7 @@ class PanoAPI:
     # [i]: typeId - 车辆类型
     # [o]: float - 车辆宽度
     @classmethod
-    def getVehicleWidth(cls,typeId):
+    def myGetVehicleWidthByType(cls, typeId):
         if typeId == 1:
             return 2.1  # CheryTiggoSUV
         elif typeId == 2:
@@ -643,7 +643,15 @@ class PanoAPI:
                 return
 
         #degYaw = yaw * 180 / math.pi
+
+        #原本的
         moveTo(vehID, x, y, yaw)
+
+        #新的
+        # log.info('whole name is ', lane)
+        # log.info('edge is ',lane.rsplit("_",1)[0],' lane is ',lane.rsplit("_",1)[1] )
+        #void MoveTo(int id, double x, double y, double yaw, const std::string & edgeID, const int laneIndex)
+        #moveTo(vehID,x, y, yaw,lane.rsplit("_",1)[0],int(lane.rsplit("_",1)[1]))
 
     @classmethod
     def my_Move_To(cls,vehID, x, y, yaw):
@@ -682,9 +690,9 @@ class PanoAPI:
         if (len(potentialDirs) > 0):
             dir = potentialDirs[int(cls.myGetRandomDouble(0, len(potentialDirs) - 1))]
         changeRoute(vehID, route_type(dir))
-        if (printFlag == True):
-            print("FromLane:", laneID, "Valid Dirs:", potentialDirs)
-            print("SetRoute", dir)
+        if (log.infoFlag == True):
+            log.info("FromLane:", laneID, "Valid Dirs:", potentialDirs)
+            log.info("SetRoute", dir)
         return True
 
     @classmethod
@@ -786,12 +794,12 @@ class PanoAPI:
 
         ConflictPointQueueFin = [ConflictPointQueueFin1, ConflictPointQueueFin2]
 
-        # print('2222',ConflictPointQueue)
-        # print('6666',ConflictPointQueueFin)
+        # log.info('2222',ConflictPointQueue)
+        # log.info('6666',ConflictPointQueueFin)
         # for i in ConflictPointQueueFin[0]:
-        #     print("7777",myGetVehicleX(i))
+        #     log.info("7777",myGetVehicleX(i))
         # for i in ConflictPointQueueFin[1]:
-        #     print("8888", myGetVehicleX(i))
+        #     log.info("8888", myGetVehicleX(i))
 
         # 获取冲突点前前的两个车队序列【0：主干道序列，1：匝道系列】
         return ConflictPointQueueFin
@@ -883,8 +891,7 @@ class PanoAPI:
 
     @classmethod
     def myGetInternalFoeLanes(cls,lane_id):
-        return getInternalFoeLanes(
-            lane_id)  # 返回[(lane, type)]返回与该内部lane冲突的所有lane和冲突类型（Merging/MergingAdjacent/Crossing）
+        return getInternalFoeLanes(lane_id)  # 返回[(lane, type)]返回与该内部lane冲突的所有lane和冲突类型（Merging/MergingAdjacent/Crossing）
 
     @classmethod
     def myGetLaneVehicles(cls,lane_id):

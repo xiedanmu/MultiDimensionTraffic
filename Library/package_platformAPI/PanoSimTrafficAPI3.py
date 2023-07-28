@@ -89,12 +89,12 @@ def myConflict(ConflictPoint,junctionID):
 
     ConflictPointQueueFin = [ConflictPointQueueFin1,ConflictPointQueueFin2]
 
-    # print('2222',ConflictPointQueue)
-    # print('6666',ConflictPointQueueFin)
+    # log.info('2222',ConflictPointQueue)
+    # log.info('6666',ConflictPointQueueFin)
     # for i in ConflictPointQueueFin[0]:
-    #     print("7777",myGetVehicleX(i))
+    #     log.info("7777",myGetVehicleX(i))
     # for i in ConflictPointQueueFin[1]:
-    #     print("8888", myGetVehicleX(i))
+    #     log.info("8888", myGetVehicleX(i))
 
     # 获取冲突点前前的两个车队序列【0：主干道序列，1：匝道系列】
     return ConflictPointQueueFin
@@ -148,12 +148,12 @@ def myConflict1(ConflictPoint,junctionID):
 
     ConflictPointQueueFin = [ConflictPointQueueFin1,ConflictPointQueueFin2]
 
-    # print('2222',ConflictPointQueue)
-    # print('6666',ConflictPointQueueFin)
+    # log.info('2222',ConflictPointQueue)
+    # log.info('6666',ConflictPointQueueFin)
     # for i in ConflictPointQueueFin[0]:
-    #     print("7777",myGetVehicleX(i))
+    #     log.info("7777",myGetVehicleX(i))
     # for i in ConflictPointQueueFin[1]:
-    #     print("8888", myGetVehicleX(i))
+    #     log.info("8888", myGetVehicleX(i))
 
     # 获取冲突点前前的两个车队序列【0：主干道序列，1：匝道系列】
     return ConflictPointQueueFin
@@ -351,9 +351,9 @@ def myGetRightFollowerVehicleAndDistance(id)->(int,int):
 
 def myGetLaneStationYaw(laneID, S):
     dd = laneID
-    print("laneID", laneID)
+    log.info("laneID", laneID)
     i = isInternalLane(laneID)
-        # print("edge")
+        # log.info("edge")
     myLaneShape = getLaneShape(laneID)
 
     laneShape = myGetLaneShapeBXS(laneID)
@@ -464,9 +464,9 @@ def myGetPointYaw(x,y,vehTraj):
 #[i] x,y全局坐标系，4*1
 def xxx(x, y, carX, carY, carYaw):
     # 全局坐标系转车辆坐标系
-    # print('全局坐标系坐标点')
-    # print(ptsx)
-    # print(ptsy)
+    # log.info('全局坐标系坐标点')
+    # log.info(ptsx)
+    # log.info(ptsy)
     ptsx = x
     ptsy = y
     ref_x = carX

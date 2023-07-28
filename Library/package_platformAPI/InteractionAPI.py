@@ -121,8 +121,8 @@ class InteractionAPI:
     #                 break
     #         if len(foeLanes) > 0:
     #             g_dicLaneToFoeLanes[i] = foeLanes
-    #     # print("Foe Lanes")
-    #     # print(g_dicLaneFoeLanes)
+    #     # log.info("Foe Lanes")
+    #     # log.info(g_dicLaneFoeLanes)
 
     # 函数：myGetLaneToFoeLanes
     # 用途：获得车道去向的敌对车道 todo:不包括相交车道
@@ -194,7 +194,7 @@ class InteractionAPI:
     # [i]: typeId - 车辆类型
     # [o]: float - 车辆宽度
     @staticmethod
-    def getVehicleWidth(typeId):
+    def myGetVehicleWidthByType(typeId):
         if typeId == 1:
             return 2.1  # CheryTiggoSUV
         elif typeId == 2:
@@ -617,7 +617,7 @@ class InteractionAPI:
 
         if cls.myIsDeadEnd(curLaneID):
             if (cls.myGetDistanceToLaneEnd(vehID) < 10):
-                print('going to del ',vehID)
+                log.info('going to del ',vehID)
                 cls.myDeleteVehicle(vehID)
                 return
 
@@ -653,7 +653,7 @@ class InteractionAPI:
         return traj_in_world
 
     # @classmethod
-    # def mySetValidRoute(cls,vehID, printFlag=False):
+    # def mySetValidRoute(cls,vehID, log.infoFlag=False):
     #     laneID = cls.myGetLaneID(vehID)
     #     if (laneID == ""): return False
     #     potentialDirs = cls.externalInterface.getValidDirections(laneID)
@@ -661,9 +661,9 @@ class InteractionAPI:
     #     if (len(potentialDirs) > 0):
     #         dir = potentialDirs[int(cls.myGetRandomDouble(0, len(potentialDirs) - 1))]
     #     cls.externalInterface.changeRoute(vehID, cls.externalInterface.route_type(dir))
-    #     if (printFlag == True):
-    #         print("FromLane:", laneID, "Valid Dirs:", potentialDirs)
-    #         print("SetRoute", dir)
+    #     if (log.infoFlag == True):
+    #         log.info("FromLane:", laneID, "Valid Dirs:", potentialDirs)
+    #         log.info("SetRoute", dir)
     #     return True
 
     @staticmethod

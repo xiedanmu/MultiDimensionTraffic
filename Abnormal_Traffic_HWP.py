@@ -8,7 +8,7 @@ from Library.package_dao.Class_Dao import Dao
 from Library.package_platformAPI.SimPlatformAPI import SimPlatformAPI
 from Library.package_runservice.RunService import run_main,output_vehicle_data_file,output_profile_data
 from Library.package_multithread.Class_MultiThread import MultiThreadPool
-
+import  Library.package_platformAPI.PythonTrafficModel_Template as python_interface_hf
 import logging
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
@@ -57,6 +57,8 @@ def ModelStart(userdata):
     userdata["EmergencyRatio"] = float(Global_in["EmergencyRatio"])
     userdata["CommonRatio"] = float(Global_in["CommonRatio"])
     userdata["CasualRatio"] = float(Global_in["CasualRatio"])
+
+    #python_interface_hf.modelInit(userdata)
     # if not hasattr(sys, 'argv'):
     #     sys.argv = ['']
     # new_car=SimPlatformAPI.myAddVehicle(398,185,10)

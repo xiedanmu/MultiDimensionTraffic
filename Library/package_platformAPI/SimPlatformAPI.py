@@ -10,6 +10,7 @@ log.addHandler(logging.NullHandler())
 class SimPlatformAPI:
     API_Name=None
     Behavior=None
+    Helper=None # 只有PanoNewAPI需要原生Pano接口
     @classmethod
     def setTargetAPI(cls,APIname):
         if APIname == 'InteractionAPI':
@@ -20,16 +21,28 @@ class SimPlatformAPI:
             from Library.package_platformAPI.PanoSimTrafficAPI2 import PanoAPI
             cls.API_Name = APIname
             cls.Behavior = PanoAPI
+        elif APIname == 'PanoNewAPI':
+            import Library.PanoTrafficApi_Python备份
+            from Library.package_platformAPI.PanoSimTrafficAPI2 import PanoAPI
+            cls.API_Name = APIname
+            cls.Helper=PanoAPI
+            cls.Behavior = Library.PanoTrafficApi_Python备份
+            cls.Behavior.PanoTrafficInterface.myInit("Traffic", "Traffic-A")
         elif APIname == 'SumoAPI':
             from Library.package_platformAPI.SumoAPI import SumoAPI
             cls.API_Name = APIname
             cls.Behavior = SumoAPI
+
+    @classmethod
+    def mySetObjectAgentControl(cls,objId: int, state: int, checkTerminate = 0, condition = 0.01):
+        return cls.Behavior.mySetObjectAgentControl(objId,state, checkTerminate, condition)
+
     # @classmethod
     # def initLaneShapes(cls):
     #     cls.Behavior.initLaneShapes()
 
     @classmethod
-    def myGetLaneToFoeLanes(cls,laneID):
+    def myGetLaneToFoeLanes(cls,laneID): #此函数没有用到
         return cls.Behavior.myGetLaneToFoeLanes(laneID)
 
     # @classmethod
@@ -41,40 +54,46 @@ class SimPlatformAPI:
         return cls.Behavior.myGetLaneLength(laneID)
 
     @classmethod
-    def myGetVehicleLengthByTypeID(cls,typeId):
+    def myGetVehicleLengthByTypeID(cls,typeId): #这个函数没有使用到
         return cls.Behavior.myGetVehicleLength(typeId)
 
     @classmethod
-    def getVehicleWidth(cls,typeId):
-        return cls.Behavior.getVehicleWidth(typeId)
+    def myGetVehicleWidthByType(cls, typeId):
+        return cls.Behavior.myGetVehicleWidthByType(typeId)
 
+    @classmethod
+    def myGetVehicleWidth(cls, car_id):
+        if cls.API_Name=='PanoNewAPI':
+            return cls.Behavior.myGetVehicleWidth(car_id)
+        else:
+            return cls.Behavior.myGetVehicleWidthByType(cls.myGetVehicleType(car_id))
 
     # @classmethod
     # def getXYFromSL(cls,laneID, station, offset):
     #     return cls.Behavior.getXYFromSL(laneID, station, offset)
 
     @classmethod
-    def getLaneShapeWithOnlyXY(cls,points):
-        return cls.Behavior.getLaneShapeWithOnlyXY(points)
+    def myGetLaneShapeWithOnlyXY(cls, points): #这个函数没有使用到
+        return cls.Behavior.myGetLaneShapeWithOnlyXY(points)
 
     @classmethod
-    def myGetHostVehicleCoordinate(cls):
+    def myGetHostVehicleCoordinate(cls): #这个函数没有使用到
         return cls.Behavior.myGetHostVehicleCoordinate()
 
     @classmethod
-    def myGetVehicleCoordinate(cls,vehID):
+    def myGetVehicleCoordinate(cls,vehID): #这个函数没有使用到
         return cls.Behavior.myGetVehicleCoordinate(vehID)
 
     @classmethod
-    def myGetHostVehicleStationInLane(cls):
+    def myGetHostVehicleStationInLane(cls): #这个函数没有使用到
         return cls.Behavior.myGetHostVehicleStationInLane()
 
     @classmethod
-    def myGetHostVehicleSpeed(cls):
+    def myGetHostVehicleSpeed(cls): #这个函数没有使用到
         return cls.Behavior.myGetHostVehicleSpeed()
 
     @classmethod
-    def myCheckHostVehicle(cls,vehID):
+    def myCheckHostVehicle(cls,vehID): #这个函数没有使用到
         return cls.Behavior.myCheckHostVehicle(vehID)
 
     @classmethod
@@ -122,28 +141,44 @@ class SimPlatformAPI:
         return cls.Behavior.myGetDistanceFromLaneStart(vehID)
 
     @classmethod
-    def myGetLaneID(cls,vehID):
+    def myGetLaneID(cls,vehID): #这个函数没有使用到
         return cls.Behavior.myGetLaneID(vehID)
 
     @classmethod
     def myGetLeftLaneID(cls, vehID):
-        return cls.Behavior.myGetLeftLaneID(vehID)
+        if cls.API_Name=='PanoNewAPI':
+            cur_lane_id=cls.Behavior.myGetVehicleLane(vehID)
+            return cls.Behavior.myGetLeftLaneId(cur_lane_id)
+        else:
+            return cls.Behavior.myGetLeftLaneID(vehID)
 
     @classmethod
     def myGetRightLaneID(cls,vehID):
-        return cls.Behavior.myGetRightLaneID(vehID)
+        if cls.API_Name=='PanoNewAPI':
+            cur_lane_id=cls.Behavior.myGetVehicleLane(vehID)
+            return cls.Behavior.myGetRightLaneId(cur_lane_id)
+        else:
+            return cls.Behavior.myGetRightLaneID(vehID)
 
     @classmethod
     def myGetLaneShape(cls,laneID):
+        if cls.API_Name=='PanoNewAPI':
+            return cls.Helper.myGetLaneShape(laneID)
         return list(cls.Behavior.myGetLaneShape(laneID))
 
     @classmethod
     def myCheckInternalLane(cls,laneID):
-        return cls.Behavior.myCheckInternalLane(laneID)
+        if cls.API_Name=='PanoNewAPI':
+            return cls.Behavior.myGetIsInternalLane(laneID)
+        else:
+            return cls.Behavior.myCheckInternalLane(laneID)
 
     @classmethod
     def myGetValidDirections(cls,laneID):
-        return cls.Behavior.myGetValidDirections(laneID)
+        if cls.API_Name == 'PanoNewAPI':
+            return cls.Helper.myGetValidDirections(laneID)
+        else:
+            return cls.Behavior.myGetValidDirections(laneID)
 
     @classmethod
     def myGetNextLanes(cls,laneID, dir):
@@ -151,6 +186,8 @@ class SimPlatformAPI:
 
     @classmethod
     def myGetAllNextLanes(cls,laneID, dir):
+        if cls.API_Name=='PanoNewAPI':
+            return cls.Helper.myGetAllNextLanes(laneID, dir)
         return cls.Behavior.myGetAllNextLanes(laneID, dir)
 
     @classmethod
@@ -183,6 +220,13 @@ class SimPlatformAPI:
         return cls.Behavior.myGetVehicleSpeed(vehID)
 
     @classmethod
+    def myGetVehicleSpeedOrigin(cls,vehID):
+        if cls.API_Name=='PanoNewAPI':
+            return cls.Helper.myGetVehicleSpeed(vehID)
+        else:
+            raise NotImplementedError
+
+    @classmethod
     def myGetVehicleX(cls,vehID):
         return cls.Behavior.myGetVehicleX(vehID)
 
@@ -195,7 +239,7 @@ class SimPlatformAPI:
         return cls.Behavior.myGetVehicleYaw(vehID)
 
     @classmethod
-    def myTranslateYawFromSumoToNormal(cls,yaw):
+    def myTranslateYawFromSumoToNormal(cls,yaw): #这个函数没有使用到
         return -yaw + math.pi / 2
 
         # def myDeg2Rad(degree):
@@ -205,15 +249,24 @@ class SimPlatformAPI:
 
     @classmethod
     def myIsDeadEnd(cls,laneID):
-        return cls.Behavior.myIsDeadEnd(laneID)
+        if cls.API_Name=='PanoNewAPI':
+            return cls.Behavior.myGetIsDeadEnd(laneID)
+        else:
+            return cls.Behavior.myIsDeadEnd(laneID)
 
     @classmethod
-    def myMoveTo(cls,vehID, x, y, yaw,lane,s,l):
-        cls.Behavior.myMoveTo(vehID, x, y, yaw,lane,s,l)
+    def myMoveTo(cls,vehID, x, y, yaw,lane,s,l,expSpeed):
+        if cls.API_Name=='PanoNewAPI':
+            cls.Behavior.myMoveObjectByXYYaw(vehID, x, y, yaw, expSpeed)
+        else:
+            cls.Behavior.myMoveTo(vehID, x, y, yaw,lane,s,l)
 
     @classmethod
     def myGetVehicleLane(cls,car_id):
-        return cls.Behavior.myGetVehicleLane(car_id)
+        if cls.API_Name=='PanoNewAPI':
+            return cls.Helper.myGetVehicleLane(car_id)
+        else:
+            return cls.Behavior.myGetVehicleLane(car_id)
 
     @classmethod
     def myGetVehicleAccel(cls,car_id):
@@ -221,18 +274,36 @@ class SimPlatformAPI:
 
     @classmethod
     def myGetLeaderVehicle(cls,car_id):
-        leader= cls.Behavior.myGetLeaderVehicle(car_id)
-        if leader ==None:
-            return -1
+        if cls.API_Name=='PanoNewAPI':
+            return cls.Behavior.myGetLeaderVehicleInLane(car_id)
         else:
-            return int(leader)
+            leader= cls.Behavior.myGetLeaderVehicle(car_id)
+            if leader ==None:
+                return -1
+            else:
+                return int(leader)
+    
+    @classmethod
+    def myGetForwardLeaderVehicle(cls,car_id):
+        if cls.API_Name=='PanoNewAPI':
+            leader_info = cls.Behavior.myGetLeader(car_id)
+            if leader_info[0]<=-1:
+                return None
+            else:
+                return leader_info
+
 
     @classmethod
     def myChangeSpeed(cls,car_id, current_speed, duration):
-        cls.Behavior.myChangeSpeed(car_id,current_speed,duration)
+        if cls.API_Name=='PanoNewAPI':
+            cls.Behavior.myMoveVehicleBySpeed(car_id, current_speed, duration)
+        else:
+            cls.Behavior.myChangeSpeed(car_id,current_speed,duration)
 
     @classmethod
     def myGetVehicleRoute(cls,id):
+        if cls.API_Name=='PanoNewAPI':
+            return cls.Behavior.myGetRoute(id)
         return cls.Behavior.myGetVehicleRoute(id)
 
     @classmethod #Pano使用
@@ -243,16 +314,24 @@ class SimPlatformAPI:
     def myGetVehicleMaxSpeed(cls,id):
         if cls.API_Name=='SumoAPI':
             return cls.Behavior.myGetVehicleMaxSpeed(id)*3.6
+        elif cls.API_Name=='PanoNewAPI':
+            return cls.Helper.myGetVehicleMaxSpeed(id)
         else:
             return cls.Behavior.myGetVehicleMaxSpeed(id)
 
     @classmethod
     def myGetInternalFoeLanes(cls,lane_id):
-        return cls.Behavior.myGetInternalFoeLanes(lane_id)
+        if cls.API_Name=='PanoNewAPI':
+            return cls.Helper.myGetInternalFoeLanes(lane_id)
+        else:
+            return cls.Behavior.myGetInternalFoeLanes(lane_id)
 
     @classmethod
     def myGetLaneVehicles(cls,lane_id):
-        return cls.Behavior.myGetLaneVehicles(lane_id)
+        if cls.API_Name=='PanoNewAPI':
+            return cls.Behavior.myGetVehicleListInLane(lane_id)
+        else:
+            return cls.Behavior.myGetLaneVehicles(lane_id)
 
     @classmethod
     def myGetVehicleLength(cls,car_id):
@@ -264,7 +343,10 @@ class SimPlatformAPI:
 
     @classmethod
     def myGetVehicleLateralOffset(cls,car_id):
-        return cls.Behavior.myGetVehicleLateralOffset(car_id)
+        if cls.API_Name.__eq__('PanoNewAPI'):
+            return cls.Behavior.myGetLateralOffset(car_id)
+        else:
+            return cls.Behavior.myGetVehicleLateralOffset(car_id)
 
     @classmethod
     def myGetVehicleType(cls,car_id):
@@ -272,17 +354,32 @@ class SimPlatformAPI:
             return cls.Behavior.myGetVehicleType(car_id)
         elif cls.API_Name.__eq__('PanoAPI'):
             return cls.Behavior.myGetVehicleType(car_id).name
+        elif cls.API_Name.__eq__('PanoNewAPI'):
+            return cls.Behavior.myGetObjectType(car_id)
         else:
             return cls.Behavior.myGetVehicleType(car_id)
 
 
     @classmethod
     def myGetVehicleMaxAccel(cls,car_id):
-        return cls.Behavior.myGetVehicleMaxAccel(car_id)
+        if cls.API_Name=='PanoNewAPI':
+            return cls.Helper.myGetVehicleMaxAccel(car_id)
+        else:
+            return cls.Behavior.myGetVehicleMaxAccel(car_id)
 
     @classmethod
     def myGetVehicleMaxDecel(cls,car_id):
-        return cls.Behavior.myGetVehicleMaxDecel(car_id)
+        if cls.API_Name=='PanoNewAPI':
+            return cls.Helper.myGetVehicleMaxDecel(car_id)
+        else:
+            return cls.Behavior.myGetVehicleMaxDecel(car_id)
+
+    @classmethod
+    def myGetVehicleMaxDecelOrigin(cls,car_id):
+        if cls.API_Name=='PanoNewAPI':
+            return cls.Helper.myGetVehicleMaxDecel(car_id)
+        else:
+            raise NotImplementedError
 
     @classmethod
     def myGetTrafficLightState(cls,car_id, direction): #TODO 未完成
@@ -294,38 +391,49 @@ class SimPlatformAPI:
             return cls.Behavior.myAddVehicle(x, y, current_s, lane_id,speed,type)
         elif cls.API_Name.__eq__('PanoAPI'):
             return cls.Behavior.myAddVehicle(x, y, speed, type=0, shape=0,driver=0)
+        elif cls.API_Name.__eq__('PanoNewAPI'):
+            return cls.Behavior.myCreateVehicleXY(lane_id,x, y, speed, type=0, shape=0,driver=0)
         else: #SUMO
             return cls.Behavior.myAddVehicle(x, y, current_s,lane_id, speed=0,type=0, shape=0, driver=0)
 
     @classmethod
     def myGetLeftLaneIDBasedLane(cls,lane_id):
-        return cls.Behavior.myGetLeftLaneIDBasedLane(lane_id)
+        if cls.API_Name.__eq__('PanoNewAPI'):
+            return cls.Behavior.myGetLeftLaneId(lane_id)
+        else:
+            return cls.Behavior.myGetLeftLaneIDBasedLane(lane_id)
 
     @classmethod
     def myGetRightLaneIDBasedLane(cls,lane_id):
-        return cls.Behavior.myGetRightLaneIDBasedLane(lane_id)
+        if cls.API_Name.__eq__('PanoNewAPI'):
+            return cls.Behavior.myGetRightLaneId(lane_id)
+        else:
+            return cls.Behavior.myGetRightLaneIDBasedLane(lane_id)
 
     @classmethod #SUMOtraci使用
     def mySetRoute(cls,veh_id,route):
-        return cls.Behavior.mySetRoute(str(veh_id),route)
+        if cls.API_Name.__eq__('PanoNewAPI'):
+            return cls.Behavior.mySetObjectRouteByLaneList(veh_id,route)
+        elif cls.API_Name.__eq__('SumoAPI'):
+            return cls.Behavior.mySetRoute(str(veh_id),route)
 
     @classmethod
     def myTranslateDirectionToRoute(cls, param):
         if cls.API_Name.__eq__('InteractionAPI'):
-            print('InteractionAPI dont implements myTranslateDirectionToRoute')
+            log.info('InteractionAPI dont implements myTranslateDirectionToRoute')
         elif cls.API_Name.__eq__('PanoAPI'):
             return cls.Behavior.myTranslateDirectionToRoute(param)
         else:
-            print('Only PanoAPI implements myTranslateDirectionToRoute')
+            log.info('Only PanoAPI implements myTranslateDirectionToRoute')
 
     @classmethod
     def myTranslateIntTo_next_junction_direction(cls, param):
         if cls.API_Name.__eq__('InteractionAPI'):
-            print('InteractionAPI dont implements myTranslateIntTo_next_junction_direction')
+            log.info('InteractionAPI dont implements myTranslateIntTo_next_junction_direction')
         elif cls.API_Name.__eq__('PanoAPI'):
             return cls.Behavior.myTranslateIntTo_next_junction_direction(param)
         else:
-            print('Only PanoAPI implements myTranslateIntTo_next_junction_direction')
+            log.info('Only PanoAPI implements myTranslateIntTo_next_junction_direction')
 
     @classmethod
     def isLaneExist(cls, lane):
@@ -333,6 +441,11 @@ class SimPlatformAPI:
             return lane is not None
         elif cls.API_Name.__eq__('PanoAPI'):
             if len(lane) > 2:
+                return True
+            else:
+                return False
+        elif cls.API_Name.__eq__('PanoNewAPI'):
+            if lane!='':
                 return True
             else:
                 return False
@@ -345,7 +458,21 @@ class SimPlatformAPI:
 
     @classmethod
     def myDeleteVehicle(cls,veh_ID):
+        if cls.API_Name.__eq__('PanoNewAPI'):
+            return cls.Behavior.myDeleteObject(veh_ID)
         return cls.Behavior.myDeleteVehicle(veh_ID)
 
+    @classmethod
+    def myMoveObjectByLaneOffset(cls,veh_ID,expOffset, duration = 2.0):
+        if cls.API_Name.__eq__('PanoNewAPI'):
+            return cls.Behavior.myMoveObjectByLaneOffset(veh_ID,expOffset, duration)
 
+    @classmethod
+    def myChangeLane(cls,veh_ID,lane_change_dir):
+        if cls.API_Name.__eq__('PanoNewAPI'):
+            return cls.Behavior.myChangeLane(veh_ID, lane_change_dir, duration = 2.0)
 
+    @classmethod
+    def myGetVehicleIsLaneChanging(cls,veh_ID):
+        if cls.API_Name.__eq__('PanoNewAPI'):
+            return cls.Behavior.myGetVehicleIsLaneChanging(veh_ID)

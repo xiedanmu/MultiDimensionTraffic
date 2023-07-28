@@ -1,4 +1,3 @@
-import multiprocessing
 import time
 from collections import deque
 
@@ -6,7 +5,8 @@ from collections import deque
 
 import numpy as np
 rng = np.random.Generator(np.random.MT19937(1))
-from Library.package_platformAPI.SimPlatformAPI import SimPlatformAPI
+# from Library.package_platformAPI.SimPlatformAPI import SimPlatformAPI
+from Library import PanoTrafficApi_Python as PanoTrafficAPI
 from Library.package_dao.Class_Dao import Dao
 from Library.package_entity.Class_Trajectory import Trajectory
 from Library.package_entity.Class_Vehicle import Vehicle
@@ -16,7 +16,7 @@ from Library.package_entity.Enum_Driving_Mode import DrivingMode
 from Library.package_entity.Enum_Types_Of_Road import TypesOfRoad
 from Library.package_entity.Enum_Located_Area import LocatedArea
 import pandas as pd
-
+from Library.package_multithread import module_name as DLL
 from Library.package_dao.Class_UserParameters import UserParameters
 
 from Library.package_interface.Traffic_Interface_Impl import TrafficInterfaceImpl
@@ -34,99 +34,205 @@ g_dictSaveProfile = dict()
 # if __name__ == '__main__':
 #     manager = multiprocessing.Manager()
 
-def update_trajectory_for_all(MultiThreadPool,delta_T):
+def update_trajectory_for_all(MultiThreadPool):
     for vehicle in Dao.vehicle_dictionary.values():
+        update_trajectory_each(MultiThreadPool, vehicle)
 
 
-        #TODO 后面把这一段改成try catch形式
+def update_trajectory_each(MultiThreadPool,vehicle):
+    # TODO 后面把这一段改成try catch形式
 
-        cur_lane_id = SimPlatformAPI.myGetLaneID(vehicle.id)
-        cur_lane_max_s = TrafficInterface.myGetLaneLength(cur_lane_id)
-        if cur_lane_id is None or cur_lane_max_s<-10000:
-            vehicle.is_xy_v_updated_lastT = True
-            continue
+    current_lane_id = vehicle.current_lane_id
+    cur_lane_max_s = TrafficInterface.myGetLaneLength(current_lane_id)
+    if current_lane_id is None or cur_lane_max_s < -10000:
+        vehicle.is_xy_v_updated_lastT = True
+        return
 
-        is_dead_end = SimPlatformAPI.myIsDeadEnd(cur_lane_id)
-        s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
-        if cur_lane_id is not None and s > cur_lane_max_s:
-            s = cur_lane_max_s
-        elif s <= 0:
-            s = 0
+    is_dead_end = PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id)
+    s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
+    if current_lane_id is not None and s > cur_lane_max_s:
+        s = cur_lane_max_s
+    elif s <= 0:
+        s = 0
 
-        if cur_lane_id is not None and is_dead_end and (cur_lane_max_s - s) < 15:
-            vehicle.is_xy_v_updated_lastT = True
-            vehicle.ignored=True
-            continue
+    if current_lane_id is not None and is_dead_end and (cur_lane_max_s - s) < 15:
+        vehicle.is_xy_v_updated_lastT = True
+        vehicle.ignored = True
+        return
 
+    trajectory = Dao.get_trajectory_by_id(vehicle.id)
+    # 判断冲突区域  """当前道路的种类会影响到选择加速度更新方式，默认为normal方式"""
+    current_lane_id = vehicle.current_lane_id
+    current_lane = Dao.lane_dictionary[current_lane_id]
 
-        trajectory = Dao.get_trajectory_by_id(vehicle.id)
+    # 特殊逻辑，应对3车道变两车道
+    # if not PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id) and not current_lane.next_lane and vehicle.driving_mode==DrivingMode.FOLLOW_DRIVING:
+    #     trajectory.x_y_laneid_s_l_cums_cuml_yaw_set=[]
+    #     #continue
 
-        # 判断冲突区域  """当前道路的种类会影响到选择加速度更新方式，默认为normal方式"""
-        try: #先取trajectory中记录的点
-            current_lane_id=trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0][2]
-        except Exception as e:
-            log.info('some Exception caught in GetVehicleLane {}'.format(e))
-            current_lane_id = SimPlatformAPI.myGetVehicleLane(vehicle.id)
-
-        try:
-            current_lane = Dao.lane_dictionary[current_lane_id]
-        except KeyError:
-            log.error("KeyError: 没有在Dao中找到这条路 {}".format(current_lane_id)) # 例如这种路(':gneJ0_0_2',)就不在Dao中
-        else:
-            if vehicle.current_lane!=current_lane.id:#vehicle.current_lane是上一个仿真步的Lane
-                vehicle.lane_is_changed=True #设置Route需要用到的
-
-            # # 特殊逻辑，应对3车道变两车道
-            # if not SimPlatformAPI.myIsDeadEnd(current_lane_id) and not current_lane.next_lane and vehicle.driving_mode==DrivingMode.FOLLOW_DRIVING:
-            #     trajectory.x_y_laneid_s_l_cums_cuml_yaw_set=[]
-            #     continue
-
-            # 区域设置
-            if current_lane.type == TypesOfRoad.INTERNAL_LANE: # 现在判断lane的类型除了lane类中的type字段外，还可以用类本身是不是internal_lane
-                vehicle.located_area = LocatedArea.INTERNAL
-                vehicle.current_lane = current_lane
-            elif not SimPlatformAPI.myIsDeadEnd(current_lane_id) and not current_lane.next_lane: #对应高速匝道向主干道会车(干道上的辅助汇入车道)
-                vehicle.located_area = LocatedArea.NORMAL
-                vehicle.current_lane = current_lane
-                if SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)<5+2*vehicle.random_coefficients or SimPlatformAPI.myGetDistanceToLaneEnd(vehicle.id)<vehicle.current_speed/3.6*trajectory.change_lane_needed_time: #修复车道连接处 车道判定不一致的问题
-                    #rng.integers(10, 15)是为了不要刚出匝道就汇入主干道
-                    pass
-                elif not vehicle.driving_mode==DrivingMode.LEFT_CHANGING_LANE or not vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE:
-                    left_lane_id = SimPlatformAPI.myGetLeftLaneIDBasedLane(current_lane_id)
-                    if left_lane_id != '' and Dao.lane_dictionary[left_lane_id].next_lane:
-                        vehicle.located_area=LocatedArea.FORCE_CHANGE_TO_LEFT
-                        trajectory.delete_trajectory_data() # 需要强制换道了
-                    else:
-                        right_lane_id = SimPlatformAPI.myGetRightLaneIDBasedLane(current_lane_id)
-                        if right_lane_id != '' and Dao.lane_dictionary[right_lane_id].next_lane:
-                            vehicle.located_area = LocatedArea.FORCE_CHANGE_TO_RIGHT
-                            trajectory.delete_trajectory_data() # 需要强制换道了 TODO 这样直接删除 会导致拼接trajectory没有数据可用
-            elif SimPlatformAPI.myGetDistanceToLaneEnd(vehicle.id) < 60:
-                vehicle.located_area = LocatedArea.ADJACENT_JUNCTION_AREA
-                vehicle.current_lane = current_lane
-                # if vehicle.driving_mode==DrivingMode.LEFT_CHANGING_LANE or vehicle.driving_mode==DrivingMode.RIGHT_CHANGING_LANE:
-                #    MotivateInterface.generate_trajectory_point_set(vehicle)
+    # 区域设置
+    if current_lane.type == TypesOfRoad.INTERNAL_LANE:  # 现在判断lane的类型除了lane类中的type字段外，还可以用类本身是不是internal_lane
+        vehicle.located_area = LocatedArea.INTERNAL
+    elif not PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id) and not current_lane.next_lane:  # 对应高速匝道向主干道会车(干道上的辅助汇入车道)
+        vehicle.located_area = LocatedArea.NORMAL
+        if PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(
+                vehicle.id) < 5 + 2 * vehicle.random_coefficients or PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(
+            vehicle.id) < vehicle.current_speed / 3.6 * trajectory.change_lane_needed_time:  # 修复车道连接处 车道判定不一致的问题
+            # rng.integers(10, 15)是为了不要刚出匝道就汇入主干道
+            pass
+        elif not vehicle.driving_mode == DrivingMode.LEFT_CHANGING_LANE and not vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE:
+            left_lane_id = PanoTrafficAPI.PanoTrafficApi_GetLeftLaneId(current_lane_id)
+            if left_lane_id != '' and Dao.lane_dictionary[left_lane_id].next_lane:
+                vehicle.located_area = LocatedArea.FORCE_CHANGE_TO_LEFT
+                trajectory.delete_trajectory_data()  # 需要强制换道了
             else:
-                vehicle.located_area = LocatedArea.NORMAL
-                vehicle.current_lane = current_lane
-        # 判断冲突区域结束  """当前道路的种类会影响到选择加速度更新方式，默认为normal方式"""
+                right_lane_id = PanoTrafficAPI.PanoTrafficApi_GetRightLaneId(current_lane_id)
+                if right_lane_id != '' and Dao.lane_dictionary[right_lane_id].next_lane:
+                    vehicle.located_area = LocatedArea.FORCE_CHANGE_TO_RIGHT
+                    trajectory.delete_trajectory_data()  # 需要强制换道了 TODO 这样直接删除 会导致拼接trajectory没有数据可用
+    elif PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(vehicle.id) < 60:
+        vehicle.located_area = LocatedArea.ADJACENT_JUNCTION_AREA
+        # if vehicle.driving_mode==DrivingMode.LEFT_CHANGING_LANE or vehicle.driving_mode==DrivingMode.RIGHT_CHANGING_LANE:
+        #    MotivateInterface.generate_trajectory_point_set(vehicle)
+    else:
+        vehicle.located_area = LocatedArea.NORMAL
+    # 判断冲突区域结束  """当前道路的种类会影响到选择加速度更新方式，默认为normal方式"""
 
-        # 计算轨迹类
-        length_of_trajectory = len(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set)
+    # 计算轨迹类
+    length_of_trajectory = len(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set)
 
-        #需要剩余点集的获取
-        if vehicle.driving_mode==DrivingMode.FOLLOW_DRIVING:
-            expected_remain_length_of_trajectory=trajectory.forecast_time_range #（1秒有10个100ms，取10%）
-        else:
-            expected_remain_length_of_trajectory=trajectory.change_lane_needed_time
+    # 需要剩余点集的获取
+    if vehicle.driving_mode == DrivingMode.FOLLOW_DRIVING:
+        expected_remain_length_of_trajectory = trajectory.forecast_time_range  # （1秒有10个100ms，取10%）
+    else:
+        expected_remain_length_of_trajectory = trajectory.change_lane_needed_time
 
-        if length_of_trajectory < expected_remain_length_of_trajectory:
-            trajectory.calculate_done = False
-            vehicle.is_calculate_trajectory = True  # 考虑弃用
-            log.info("Trajectory length of car {} is #{}#".format(vehicle.id,len(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set)))
-            MotivateInterface.generate_trajectory_point_set(vehicle, trajectory, MultiThreadPool)
-        else:
-            vehicle.is_calculate_trajectory = False  # 考虑弃用
+    if length_of_trajectory < expected_remain_length_of_trajectory:
+        trajectory.calculate_done = False
+        vehicle.is_calculate_trajectory = True  # 考虑弃用
+        log.info(
+            "Trajectory length of car {} is #{}#".format(vehicle.id, len(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set)))
+        MotivateInterface.generate_trajectory_point_set(vehicle, trajectory, MultiThreadPool)
+    else:
+        vehicle.is_calculate_trajectory = False  # 考虑弃用
+
+def update_trajectory_each_HF(MultiThreadPool,vehicle):
+    # TODO 后面把这一段改成try catch形式
+
+    trajectory = Dao.get_trajectory_by_id(vehicle.id)
+    if len(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set)>0:
+        update_trajectory_index(vehicle,trajectory) #TODO 在车道变更之后HF接口获取的S会突变，使得我的轨迹数据插值法更新异常
+
+    current_lane_id = vehicle.current_lane_id
+    cur_lane_max_s = TrafficInterface.myGetLaneLength(current_lane_id)
+    if current_lane_id is None or cur_lane_max_s < -10000:
+        vehicle.is_xy_v_updated_lastT = True
+        return
+
+    is_dead_end = PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id)
+    s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
+    if current_lane_id is not None and s > cur_lane_max_s:
+        s = cur_lane_max_s
+    elif s <= 0:
+        s = 0
+
+    if current_lane_id is not None and is_dead_end and (cur_lane_max_s - s) < 15:
+        vehicle.is_xy_v_updated_lastT = True
+        vehicle.ignored = True
+        return
+
+    trajectory = Dao.get_trajectory_by_id(vehicle.id)
+
+    # #HF的新接口需要重塑基本流程，每次进来都删除点集
+    # trajectory.x_y_laneid_s_l_cums_cuml_yaw_set.clear()
+    # trajectory.current_continuous_lane_id = []
+
+    # 判断冲突区域  """当前道路的种类会影响到选择加速度更新方式，默认为normal方式"""
+    current_lane_id = vehicle.current_lane_id
+    current_lane = Dao.lane_dictionary[current_lane_id]
+
+    # # 特殊逻辑，应对3车道变两车道
+    # if not PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id) and not current_lane.next_lane and vehicle.driving_mode==DrivingMode.FOLLOW_DRIVING:
+    #     trajectory.x_y_laneid_s_l_cums_cuml_yaw_set=[]
+    #     continue
+
+    # 区域设置
+    if current_lane.type == TypesOfRoad.INTERNAL_LANE:  # 现在判断lane的类型除了lane类中的type字段外，还可以用类本身是不是internal_lane
+        vehicle.located_area = LocatedArea.INTERNAL
+    elif not PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id) and not current_lane.next_lane:  # 对应高速匝道向主干道会车(干道上的辅助汇入车道)
+        vehicle.located_area = LocatedArea.NORMAL
+        if PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(
+                vehicle.id) < 5 + 2 * vehicle.random_coefficients or PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(
+            vehicle.id) < vehicle.current_speed / 3.6 * trajectory.change_lane_needed_time:  # 修复车道连接处 车道判定不一致的问题
+            # rng.integers(10, 15)是为了不要刚出匝道就汇入主干道
+            pass
+        elif not vehicle.driving_mode == DrivingMode.LEFT_CHANGING_LANE and not vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE:
+            left_lane_id = PanoTrafficAPI.PanoTrafficApi_GetLeftLaneId(current_lane_id)
+            if left_lane_id != '' and Dao.lane_dictionary[left_lane_id].next_lane:
+                vehicle.located_area = LocatedArea.FORCE_CHANGE_TO_LEFT
+                trajectory.delete_trajectory_data()  # 需要强制换道了
+            else:
+                right_lane_id = PanoTrafficAPI.PanoTrafficApi_GetRightLaneId(current_lane_id)
+                if right_lane_id != '' and Dao.lane_dictionary[right_lane_id].next_lane:
+                    vehicle.located_area = LocatedArea.FORCE_CHANGE_TO_RIGHT
+                    trajectory.delete_trajectory_data()  # 需要强制换道了 TODO 这样直接删除 会导致拼接trajectory没有数据可用
+    elif PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(vehicle.id) < 60:
+        vehicle.located_area = LocatedArea.ADJACENT_JUNCTION_AREA
+        # if vehicle.driving_mode==DrivingMode.LEFT_CHANGING_LANE or vehicle.driving_mode==DrivingMode.RIGHT_CHANGING_LANE:
+        #    MotivateInterface.generate_trajectory_point_set(vehicle)
+    else:
+        vehicle.located_area = LocatedArea.NORMAL
+    # 判断冲突区域结束  """当前道路的种类会影响到选择加速度更新方式，默认为normal方式"""
+
+    # 计算轨迹类
+    length_of_trajectory = len(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set)
+
+    # 需要剩余点集的获取
+    if vehicle.driving_mode == DrivingMode.FOLLOW_DRIVING:
+        expected_remain_length_of_trajectory = trajectory.forecast_time_range  #TODO 修改（duration是0.2s，forcast_time/duration*10%是剩余的点击数量，不能少于这个）
+    else:
+        expected_remain_length_of_trajectory = trajectory.change_lane_needed_time
+
+    if length_of_trajectory < expected_remain_length_of_trajectory:
+        trajectory.calculate_done = False
+        vehicle.is_calculate_trajectory = True  # 考虑弃用
+        log.info(
+            "Trajectory length of car {} is #{}#".format(vehicle.id, len(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set)))
+        MotivateInterface.generate_trajectory_point_set(vehicle, trajectory, MultiThreadPool)
+    else:
+        vehicle.is_calculate_trajectory = False  # 考虑弃用
+    # trajectory.calculate_done = False
+    # vehicle.is_calculate_trajectory = True
+    # MotivateInterface.generate_trajectory_point_set(vehicle, trajectory, MultiThreadPool)
+
+
+def update_trajectory_index(vehicle,trajectory):
+    vehicle.current_X = PanoTrafficAPI.PanoTrafficApi_GetVehicleX(vehicle.id)
+    vehicle.current_Y = PanoTrafficAPI.PanoTrafficApi_GetVehicleY(vehicle.id)
+    vehicle.current_Yaw = PanoTrafficAPI.PanoTrafficApi_GetVehicleYaw(vehicle.id)
+    vehicle.current_lane_id = PanoTrafficAPI.PanoTrafficApi_GetVehicleLane(vehicle.id)
+    vehicle.current_S = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
+    vehicle.current_L = PanoTrafficAPI.PanoTrafficApi_GetVehicleLateralOffset(vehicle.id)
+
+    continue_lane_length = dict()
+    for item in trajectory.current_continuous_lane_id:
+        continue_lane_length[item] = TrafficInterface.myGetLaneLength(item)
+    result, pos = AlgorithmInterface.get_tuple_by_linear_interpolation(trajectory, vehicle.current_S,
+                                                                       continue_lane_length)
+
+    # if vehicle.id==101:
+    #     log.info('fist s in traj:',trajectory.s_in_current_trajectory[0])
+    if pos == 0:
+        trajectory.s_in_current_trajectory[0] = result[5]
+        trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0] = result
+    else:
+        for count in range(0, pos):
+            trajectory.s_in_current_trajectory.popleft()
+            trajectory.x_y_laneid_s_l_cums_cuml_yaw_set.popleft()
+
+        trajectory.s_in_current_trajectory[0] = result[5]
+        trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0] = result
+
 
 
 def update_location_data_for_all(userdata,delta_T):
@@ -142,10 +248,14 @@ def update_location_data_for_all(userdata,delta_T):
         #     vehicle = queue.pop(0)
         #     update_location_each(vehicle, queue)
         #g_dictSaveProfile[userdata["time"]]['update_location_data_each'] = f'{elapsed_time2 - elapsed_time1:.8f}'
+    def update_remaining_vehicle(delta_T, queue):
+        while len(queue) != 0:
+            #log.info('length of queue is ',len(queue))
+            DLL.RELEASE_GIL() #必须的操作
+            vehicle = queue.popleft()
+            update_location_data_each(vehicle, queue, delta_T)
 
-    while len(queue)!=0:
-        vehicle=queue.popleft()
-        update_location_data_each(vehicle,queue,delta_T)
+    update_remaining_vehicle(delta_T, queue)
 
 def update_location_data_each(vehicle, queue,delta_T):
 
@@ -153,56 +263,22 @@ def update_location_data_each(vehicle, queue,delta_T):
     """"检查轨迹计算是否完毕"""
     trajectory = Dao.get_trajectory_by_id(vehicle.id)
     if not trajectory.calculate_done:
-        # print('calculate trajectory is not done '+str(vehicle.id))
-        # log.warning("{} calculate trajectory is not done {}".format(vehicle.id,trajectory.calculate_done))
-        # trajectory.suspend_time=trajectory.suspend_time+1
-        # if trajectory.suspend_time>50:
-        #     log.critical("{} trajectory suspend time over than 50 {}, skip this time".format(vehicle.id,trajectory.calculate_done))
-        #     # ·········time.sleep(1)
-        #     trajectory.suspend_time = 0
-        #     return
         queue.append(vehicle)
         return
-
-    # trajectory.suspend_time = 0
-
-    # cur_lane_id = SimPlatformAPI.myGetLaneID(vehicle.id)
-    # cur_lane_max_s = TrafficInterface.myGetLaneLength(cur_lane_id)
-    # is_dead_end = SimPlatformAPI.myIsDeadEnd(cur_lane_id)
-    # s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
-    # if s > cur_lane_max_s:
-    #     s = cur_lane_max_s
-    # elif s <= 0:
-    #     s = 0
-
-    # if is_dead_end and (cur_lane_max_s - s) < 10:
-    #     vehicle.is_xy_v_updated_lastT = True
-    #     return
-
-    #更新车辆所在区域
-    # current_x=SimPlatformAPI.myGetVehicleX(vehicle.id)
-    # current_y=SimPlatformAPI.myGetVehicleY(vehicle.id)
-    # current_lane_id = trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0][2]
-    # current_lane = Dao.lane_dictionary[current_lane_id]
-    #TrafficInterface.update_the_vehicle_area(current_lane, vehicle) #TODO 这个地方和轨迹规划的更新车辆位置重复了，可以删去
-
-    # # 如果没有点集就返回
-    # if len(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set)==0:
-    #     return
 
     '''
     开启碰撞就停止功能
     '''
-    if UserParameters.collision_stop is True:
+    if False and UserParameters.collision_stop is True:
 
         if vehicle.is_accidental == True:
             vehicle.accidental_time+=delta_T
             if vehicle.accidental_time>10:
                 vehicle.going_to_delete=True
         elif vehicle.lane_type==TypesOfRoad.NORMAL_LANE:
-            leader_id=SimPlatformAPI.myGetLeaderVehicle(vehicle.id)
+            leader_id=PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehicle.id)
 
-            if leader_id>0 and TrafficInterface.two_car_distance(vehicle.id,leader_id) < SimPlatformAPI.myGetVehicleLength(leader_id):
+            if leader_id>0 and PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id,leader_id) < TrafficInterface.get_vehicle_length(leader_id):
                 leader = Dao.vehicle_dictionary[leader_id]
                 leader.is_accidental = True
                 vehicle.is_accidental = True
@@ -212,67 +288,73 @@ def update_location_data_each(vehicle, queue,delta_T):
     (x, y, laneid, s, l, cums, cuml, yaw) = MotivateInterface.pop_point_in_trajectory(vehicle, trajectory,delta_T)
 
     #('lane is changed?',vehicle.id,' ',vehicle.lane_is_changed)
-
-    if SimPlatformAPI.API_Name.__eq__('PanoAPI'):
-        if vehicle.going_to_update_Route == None:
-            ValidDirections = SimPlatformAPI.myGetValidDirections(vehicle.current_lane.id)
-            if len(ValidDirections) == 0:
-                vehicle.going_to_update_Route = SimPlatformAPI.myTranslateDirectionToRoute(
-                    SimPlatformAPI.myTranslateIntTo_next_junction_direction(0))
-            else:
-                vehicle.going_to_update_Route = SimPlatformAPI.myTranslateDirectionToRoute(rng.choice(ValidDirections))
-            vehicle.lane_is_changed = False
-
-        elif vehicle.lane_is_changed:
-            # direction=TrafficInterface.get_direction_from_lane_to_lane(vehicle.current_lane.id,laneid)
-            # vehicle.going_to_update_Route = SimPlatformAPI.myTranslateDirectionToRoute(direction)
-            if vehicle.current_lane.type == TypesOfRoad.INTERNAL_LANE:
-                vehicle.lane_is_changed = False
-
-            else:
-                ValidDirections = SimPlatformAPI.myGetValidDirections(vehicle.current_lane.id)
-                if len(ValidDirections) == 0:
-                    vehicle.going_to_update_Route = SimPlatformAPI.myTranslateDirectionToRoute(
-                        SimPlatformAPI.myTranslateIntTo_next_junction_direction(0))
-                else:
-                    vehicle.going_to_update_Route = SimPlatformAPI.myTranslateDirectionToRoute(
-                        rng.choice(ValidDirections))
-                vehicle.lane_is_changed = False
-
     vehicle.going_to_update_x=x
     vehicle.going_to_update_y=y
     vehicle.going_to_update_yaw=yaw
     #acc 和 speed 已经在上面的函数里面记录了
     vehicle.going_to_update_s = s
     vehicle.going_to_update_l = l
-    vehicle.going_to_update_lane = laneid
+    vehicle.going_to_update_lane_id = laneid
 
-    # print("根据轨迹直接更新vehicle的坐标和角度")
-    # if x is not None and y is not None and s is not None and yaw is not None:
-    
+    if laneid!=vehicle.current_lane_id:
+        vehicle.lane_is_changed = True
 
-    # print(" move to loaded")
-    
-    
-    # 把进程间的共享内存里的信息保存回Dao层中 不需要 重复了
-    # Dao.trajectory_dictionary[vehicle.id] = trajectory
-    # Dao.vehicle_dictionary[vehicle.id] = vehicle
+    if SimPlatformAPI.API_Name.__eq__('PanoAPI'):
+        if vehicle.going_to_update_Route == None:
+            ValidDirections = PanoTrafficAPI.PanoTrafficApi_GetValidDirections(vehicle.current_lane_id)
+            if len(ValidDirections) == 0:
+                vehicle.going_to_update_Route = PanoTrafficAPI.PanoTrafficApi_TranslateDirectionToRoute(
+                    PanoTrafficAPI.PanoTrafficApi_TranslateIntTo_next_junction_direction(0))
+            else:
+                vehicle.going_to_update_Route = PanoTrafficAPI.PanoTrafficApi_TranslateDirectionToRoute(rng.choice(ValidDirections))
+            vehicle.lane_is_changed = False
 
-    # """"检查是否完毕"""
-    # try:
-    #     (x, y, laneid, s, l, cums, cuml, yaw) = MotivateInterface.pop_point_in_trajectory(vehicle, trajectory)
-    # except Exception as e:
-    #     print('some Exception caught in pop_point_in_trajectory', e)
-    #     return
-    # else:
-    #     # print("根据轨迹直接更新vehicle的坐标和角度")
-    #     # if x is not None and y is not None and s is not None and yaw is not None:
-    #     MotivateInterface.move_to(vehicle.id, x, y, yaw)
-    #
-    #     # 把进程间的共享内存里的信息保存回Dao层中
-    #     Dao.trajectory_dictionary[vehicle.id] = trajectory
-    #     Dao.vehicle_dictionary[vehicle.id] = vehicle
+        elif vehicle.lane_is_changed:
+            # direction=TrafficInterface.get_direction_from_lane_to_lane(vehicle.current_lane.id,laneid)
+            # vehicle.going_to_update_Route = PanoTrafficAPI.PanoTrafficApi_TranslateDirectionToRoute(direction)
+            if PanoTrafficAPI.PanoTrafficApi_CheckInternalLane(vehicle.current_lane_id):
+                vehicle.lane_is_changed = False #这种情况不用设置route，因为车辆进入junction后不会再internal_lane的末端消失的
 
+            else:
+                ValidDirections = PanoTrafficAPI.PanoTrafficApi_GetValidDirections(vehicle.current_lane_id)
+                if len(ValidDirections) == 0:
+                    vehicle.going_to_update_Route = PanoTrafficAPI.PanoTrafficApi_TranslateDirectionToRoute(
+                        PanoTrafficAPI.PanoTrafficApi_TranslateIntTo_next_junction_direction(0))
+                else:
+                    vehicle.going_to_update_Route = PanoTrafficAPI.PanoTrafficApi_TranslateDirectionToRoute(
+                        rng.choice(ValidDirections))
+                vehicle.lane_is_changed = False
+
+def update_location_data_each_HF(vehicle,delta_T):
+
+
+    '''
+    开启碰撞就停止功能 #TODO 此功能未适配新接口，暂时用不上
+    '''
+    if False and UserParameters.collision_stop is True:
+
+        if vehicle.is_accidental == True:
+            vehicle.accidental_time+=delta_T
+            if vehicle.accidental_time>10:
+                vehicle.going_to_delete=True
+        elif vehicle.lane_type==TypesOfRoad.NORMAL_LANE:
+            leader_id=PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehicle.id)
+
+            if leader_id>0 and PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id,leader_id) < TrafficInterface.get_vehicle_length(leader_id):
+                leader = Dao.vehicle_dictionary[leader_id]
+                leader.is_accidental = True
+                vehicle.is_accidental = True
+
+    # 每个仿真步都会重新计算速度和加速度，但不会计算轨迹
+    s,l = MotivateInterface.pop_point_in_trajectory_new(vehicle,delta_T)
+
+    #acc 和 speed 已经在上面的函数里面记录了
+    vehicle.going_to_update_s = s
+    vehicle.going_to_update_l = l #TODO 直接给未来多久达到想要的l值就行，没必要自己存储，减少运算量
+    vehicle.going_to_update_lane_id = PanoTrafficAPI.PanoTrafficApi_GetVehicleLane(vehicle.id)
+
+    if vehicle.going_to_update_lane_id!=vehicle.current_lane_id:
+        vehicle.lane_is_changed = True
 
 def submit_location_data_for_all(userdata):
     # global g_dictSaveProfile
@@ -290,35 +372,38 @@ def submit_location_data_for_all(userdata):
             #count+=1
             continue
         elif vehicle.going_to_delete:
-            SimPlatformAPI.myDeleteVehicle(vehicle.id)
+            PanoTrafficAPI.PanoTrafficApi_DeleteVehicle(vehicle.id)
             continue
         vehicle.set_acceleration(vehicle.going_to_update_acc)
         vehicle.set_speed(vehicle.going_to_update_speed)
-        #print(f'before change speed cost:[{time.perf_counter() - time_start:.8f}s]')
+        #log.info(f'before change speed cost:[{time.perf_counter() - time_start:.8f}s]')
 
         # before_change_speed_time=time.perf_counter()
 
-        SimPlatformAPI.myChangeSpeed(vehicle.id, vehicle.current_speed, 0)  # todo 这里的第三个参数设为0和1有什么直观区别
+        try:
+            PanoTrafficAPI.PanoTrafficApi_ChangeSpeed(vehicle.id, vehicle.going_to_update_acc, 0)  # todo 这里的第三个参数设为0和1有什么直观区别
+        except:
+            log.info('sth going wrong')
         # after_change_speed_time=time.perf_counter()
         # change_speed_time_accumulate +=(after_change_speed_time-before_change_speed_time)
-        #print(f'after  change speed cost:[{time.perf_counter() - time_start:.8f}s]')
-        if vehicle.going_to_update_Route is not None:
-            SimPlatformAPI.myChangeRoute(vehicle.id, vehicle.going_to_update_Route)
+        #log.info(f'after  change speed cost:[{time.perf_counter() - time_start:.8f}s]')
+        if SimPlatformAPI.API_Name.__eq__('PanoAPI') and vehicle.lane_is_changed is True:#if vehicle.going_to_update_Route is not None:
+            PanoTrafficAPI.PanoTrafficApi_ChangeRoute(vehicle.id, vehicle.going_to_update_Route)
         # after_change_route_time=time.perf_counter()
         # change_route_time_accumulate+=(after_change_route_time-after_change_speed_time)
-        #print(f'after  change route cost:[{time.perf_counter() - time_start:.8f}s]')
+        #log.info(f'after  change route cost:[{time.perf_counter() - time_start:.8f}s]')
 
         MotivateInterface.move_to(vehicle.id, vehicle.going_to_update_x, vehicle.going_to_update_y,
-                                  vehicle.going_to_update_yaw,vehicle.going_to_update_lane,
-                                  vehicle.going_to_update_s,vehicle.going_to_update_l)
+                                  vehicle.going_to_update_yaw,vehicle.going_to_update_lane_id,
+                                  vehicle.going_to_update_s,vehicle.going_to_update_l,vehicle.going_to_update_acc)
         # after_move_to_time = time.perf_counter()
         # move_to_time_accumulate+=(after_move_to_time-after_change_route_time)
-        #print(f'after            move_to:[{time.perf_counter() - time_start:.8f}s]')
+        #log.info(f'after            move_to:[{time.perf_counter() - time_start:.8f}s]')
 
         vehicle.current_X = vehicle.going_to_update_x
         vehicle.current_Y = vehicle.going_to_update_y
         vehicle.current_Yaw = vehicle.going_to_update_yaw
-        vehicle.current_Lane = vehicle.going_to_update_lane
+        vehicle.current_lane_id = vehicle.going_to_update_lane_id
         vehicle.current_S = vehicle.going_to_update_s
         vehicle.current_L = vehicle.going_to_update_l
 
@@ -333,7 +418,7 @@ def submit_location_data_for_all(userdata):
         result[vehicle.id]['x'] = vehicle.going_to_update_x
         result[vehicle.id]['y'] = vehicle.going_to_update_y
         result[vehicle.id]['psi_rad'] = vehicle.going_to_update_yaw
-        result[vehicle.id]['psi_rad'] = SimPlatformAPI.myTranslateYawFromSumoToNormal(vehicle.going_to_update_yaw)
+        result[vehicle.id]['psi_rad'] = PanoTrafficAPI.PanoTrafficApi_TranslateYawFromSumoToNormal(vehicle.going_to_update_yaw)
 
         if vehicle.foe_vehicle is not None:
             result[vehicle.id]['foe_vehicle'] = vehicle.foe_vehicle.id
@@ -346,14 +431,74 @@ def submit_location_data_for_all(userdata):
     #     g_dictSaveProfile[userdata["time"]]['average ChangeSpeed time per car'] = f'{change_speed_time_accumulate / count:.8f}' #保留8位小数
     #     g_dictSaveProfile[userdata["time"]]['average ChangeRoute time per car'] = f'{change_route_time_accumulate / count:.8f}'
     #     g_dictSaveProfile[userdata["time"]]['average   move_to   time per car'] = f'{move_to_time_accumulate / count:.8f}'
-        #print(f'average ChangeSpeed time per car:[{change_speed_time_accumulate / count:.8f}s]')
-        #print(f'average ChangeRoute time per car:[{change_route_time_accumulate / count:.8f}s]')
-        #print(f'average   move_to   time per car:[{move_to_time_accumulate/count:.8f}s]')
+        #log.info(f'average ChangeSpeed time per car:[{change_speed_time_accumulate / count:.8f}s]')
+        #log.info(f'average ChangeRoute time per car:[{change_route_time_accumulate / count:.8f}s]')
+        #log.info(f'average   move_to   time per car:[{move_to_time_accumulate/count:.8f}s]')
 
     # if count==len_of_start_in_submit_location_data:
-    #     print('All car have been processed  in this time step')
-    #print(f'inside submit_location_data_for_all cost:[{time.perf_counter() - time_start:.8f}s]')
+    #     log.info('All car have been processed  in this time step')
+    #log.info(f'inside submit_location_data_for_all cost:[{time.perf_counter() - time_start:.8f}s]')
 
+#仅用于韩飞接口
+def submit_location_data_each_HF(userdata,vehicle):
+    if vehicle.is_xy_v_updated_lastT is True:
+        # count+=1
+        return
+    elif vehicle.going_to_delete:
+        PanoTrafficAPI.PanoTrafficApi_DeleteVehicle(vehicle.id)
+        return
+
+
+    PanoTrafficAPI.PanoTrafficApi_SetObjectAgentControl(vehicle.id, 1, 1, userdata['duration'])
+
+    # log.info(f'before change speed cost:[{time.perf_counter() - time_start:.8f}s]')
+
+    # before_change_speed_time=time.perf_counter()
+
+    try:
+        #PanoTrafficAPI.PanoTrafficApi_ChangeSpeed(vehicle.id, vehicle.going_to_update_acc, 0)  # todo 这里的第三个参数设为0和1有什么直观区别
+        #log.info('id:', vehicle.id, ' going_to_update_speed:', vehicle.going_to_update_speed)
+        PanoTrafficAPI.PanoTrafficApi_MoveVehicleBySpeed(vehicle.id, vehicle.going_to_update_speed, userdata['duration'])
+        if vehicle.sent_lane_change_cmd==False and vehicle.driving_mode == DrivingMode.LEFT_CHANGING_LANE:
+            PanoTrafficAPI.PanoTrafficApi_ChangeLane(vehicle.id,1) #TODO 存在多次调用了该接口的问题,用islaneching函数去判断是否需要再调用该函数
+            vehicle.sent_lane_change_cmd=True
+        elif vehicle.sent_lane_change_cmd==False and vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE:
+            PanoTrafficAPI.PanoTrafficApi_ChangeLane(vehicle.id,-1)
+            vehicle.sent_lane_change_cmd=True
+
+        #PanoTrafficAPI.PanoTrafficApi_MoveObjectByLaneOffset(vehicle.id, vehicle.going_to_update_l, userdata['duration'])
+        #PanoTrafficAPI.PanoTrafficApi_MoveTo(vehicle.id,vehicle.going_to_update_x,vehicle.going_to_update_y,vehicle.going_to_update_yaw,vehicle.going_to_update_speed)
+
+    except:
+        log.info('sth going wrong')
+
+    else:
+        vehicle.set_acceleration(vehicle.going_to_update_acc)
+        vehicle.set_speed(vehicle.going_to_update_speed)
+        # after_change_speed_time=time.perf_counter()
+        # change_speed_time_accumulate +=(after_change_speed_time-before_change_speed_time)
+        # log.info(f'after  change speed cost:[{time.perf_counter() - time_start:.8f}s]')
+        # if SimPlatformAPI.API_Name.__eq__('PanoAPI') and vehicle.lane_is_changed is True:  # if vehicle.going_to_update_Route is not None:
+        #     PanoTrafficAPI.PanoTrafficApi_ChangeRoute(vehicle.id, vehicle.going_to_update_Route)
+        # after_change_route_time=time.perf_counter()
+        # change_route_time_accumulate+=(after_change_route_time-after_change_speed_time)
+        # log.info(f'after  change route cost:[{time.perf_counter() - time_start:.8f}s]')
+
+        # MotivateInterface.move_to(vehicle.id, vehicle.going_to_update_x, vehicle.going_to_update_y,
+        #                           vehicle.going_to_update_yaw, vehicle.going_to_update_lane_id,
+        #                           vehicle.going_to_update_s, vehicle.going_to_update_l, vehicle.going_to_update_acc)
+
+        # after_move_to_time = time.perf_counter()
+        # move_to_time_accumulate+=(after_move_to_time-after_change_route_time)
+        # log.info(f'after            move_to:[{time.perf_counter() - time_start:.8f}s]')
+
+        vehicle.current_lane_id = vehicle.going_to_update_lane_id
+        vehicle.current_S = vehicle.going_to_update_s
+        vehicle.current_L = vehicle.going_to_update_l
+
+        vehicle.current_Route = vehicle.going_to_update_Route
+
+        vehicle.is_xy_v_updated_lastT = True
 
 last_time=0
 def run_main(userdata, MultiThreadPool):
@@ -361,10 +506,12 @@ def run_main(userdata, MultiThreadPool):
     # start_time=time.perf_counter()
     # g_dictSaveProfile[userdata["time"]]=dict()
     # g_dictSaveProfile[userdata["time"]]['car num']=Dao.vehicle_dictionary.__len__()
-    delta_T=userdata["time"]-last_time
+    if SimPlatformAPI.API_Name=='PanoNewAPI':
+        delta_T = userdata["duration"]
+    else:
+        delta_T = userdata["time"] - last_time
     last_time=userdata["time"]
 
-    Dao.refresh_dao()
     # g_dictSaveProfile[userdata["time"]]['refresh_dao'] = f'{time.perf_counter() - start_time:.8f}'
 
     #elapsed_time1=time.perf_counter()
@@ -386,38 +533,77 @@ def run_main(userdata, MultiThreadPool):
 
     if flag==False:
         # log.warning("check_no_last_step_veh_update is False")
-        # print('the job in last time step haven\'t done yet,pass this time step')
-        # print("当前线程: ", threading.currentThread().ident, "当前进程：", os.getpid(), " 父进程：", os.getppid(),' update_last_time_step_data over')
+        # log.info('the job in last time step haven\'t done yet,pass this time step')
+        # log.info("当前线程: ", threading.currentThread().ident, "当前进程：", os.getpid(), " 父进程：", os.getppid(),' update_last_time_step_data over')
 
         # for vehicle in Dao.vehicle_dictionary.values():
-        #     SimPlatformAPI.myChangeSpeed(vehicle.id,0,0)
+        #     PanoTrafficAPI.PanoTrafficApi_ChangeSpeed(vehicle.id,0,0)
         return
     set_last_step_veh_update_not_done()
     #elapsed_time2 = time.perf_counter()
     #g_dictSaveProfile[userdata["time"]]['set_last_step_veh_update_not_done'] = f'{elapsed_time2 - elapsed_time1:.8f}'
-    #print(f'until set_last_step_veh_update_not_done cost:[{elapsed_time2 - elapsed_time1:.8f}s]')
+    #log.info(f'until set_last_step_veh_update_not_done cost:[{elapsed_time2 - elapsed_time1:.8f}s]')
 
-    update_trajectory_for_all(MultiThreadPool,delta_T)
+    update_trajectory_for_all(MultiThreadPool)
     #elapsed_time1 = time.perf_counter()
     #g_dictSaveProfile[userdata["time"]]['update_trajectory_for_all'] = f'{elapsed_time1 - elapsed_time2:.8f}'
-    #print(f'until update_trajectory_for_all         cost:[{elapsed_time1 - elapsed_time2:.8f}s]')
+    #log.info(f'until update_trajectory_for_all         cost:[{elapsed_time1 - elapsed_time2:.8f}s]')
 
     log.info("updata_location_for_all begin")
 
     update_location_data_for_all(userdata,delta_T)
     #elapsed_time2 = time.perf_counter()
     #g_dictSaveProfile[userdata["time"]]['updata_location_data_for_all'] = f'{elapsed_time2 - elapsed_time1:.8f}'
-    #print(f'until updata_location_data_for_all      cost:[{elapsed_time2 - elapsed_time1:.8f}s]')
+    #log.info(f'until updata_location_data_for_all      cost:[{elapsed_time2 - elapsed_time1:.8f}s]')
 
     result=submit_location_data_for_all(userdata)
     #elapsed_time1 = time.perf_counter()
     #g_dictSaveProfile[userdata["time"]]['submit_location_data_for_all'] = f'{elapsed_time1 - elapsed_time2:.8f}'
-    #print(f'until submit_location_data_for_all      cost:[{elapsed_time1 - elapsed_time2:.8f}s]')
+    #log.info(f'until submit_location_data_for_all      cost:[{elapsed_time1 - elapsed_time2:.8f}s]')
     #generate_data_in_excel_to_visualization(userdata) # 生成CSV数据使用
     #generate_profile_data_in_excel(userdata)  # 生成CSV数据使用
 
     #g_dictSaveProfile[userdata["time"]]['total'] = f'{time.perf_counter() - start_time:.8f}'
     return result
+
+##对应韩飞的接口，固定vehid
+# def run_main_new(userdata, MultiThreadPool,targetObjId):
+#     delta_T = userdata["duration"]
+#     vehicle=Dao.vehicle_dictionary[targetObjId]
+
+#     vehicle.is_xy_v_updated_lastT = False
+#     update_trajectory_each_HF(MultiThreadPool,vehicle)
+#     if vehicle.is_xy_v_updated_lastT == True:
+#         return
+
+#     queue=deque()
+
+#     #DLL.RELEASE_GIL()
+#     update_location_data_each_HF(vehicle, queue,delta_T)
+
+#     #update_remaining_vehicle：为了主动释放dll
+#     # def update_remaining_vehicle(delta_T, queue):
+#     #     while len(queue) != 0:
+#     #         #log.info('length of queue is ',len(queue))
+#     #         DLL.RELEASE_GIL() #必须的操作
+#     #         vehicle = queue.popleft()
+#     #         update_location_data_each_HF(vehicle, queue, delta_T)
+#     #
+#     # update_remaining_vehicle(delta_T, queue)
+
+#     submit_location_data_each_HF(userdata,vehicle)
+
+#对应韩飞的新接口，固定vehid
+def run_main_new(userdata, targetObjId):
+    
+    delta_T = userdata["duration"]
+    vehicle=Dao.vehicle_dictionary[targetObjId]
+    vehicle.is_xy_v_updated_lastT = False
+    TrafficInterface.update_vehicle_driving_state(vehicle)
+
+    update_location_data_each_HF(vehicle,delta_T)
+    
+    submit_location_data_each_HF(userdata,vehicle)
 
 def generate_profile_data_in_excel(userdata):
     g_listSaveProfile.append([])
@@ -437,18 +623,18 @@ def generate_data_in_excel_to_visualization(userdata):
         length=vehicle.length
         width=vehicle.width
         is_calculate = vehicle.is_calculate_trajectory
-        curLane = SimPlatformAPI.myGetVehicleLane(vehicle.id)
-        curRoute= SimPlatformAPI.myGetRoute(vehicle.id)
-        curYaw = SimPlatformAPI.myGetVehicleYaw(vehicle.id)
-        curS = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
-        curX = SimPlatformAPI.myGetVehicleX(vehicle.id)
-        curY = SimPlatformAPI.myGetVehicleY(vehicle.id)
-        leader_car = SimPlatformAPI.myGetLeaderVehicle(vehicle.id)
-        left_leader_car = SimPlatformAPI.myGetLeftLeaderVehicle(vehicle.id)
-        right_leader_car = SimPlatformAPI.myGetRightLeaderVehicle(vehicle.id)
-        curL = SimPlatformAPI.myGetVehicleLateralOffset(vehicle.id)
-        curAcc = SimPlatformAPI.myGetVehicleAccel(vehicle.id)
-        curSpeed = SimPlatformAPI.myGetVehicleSpeed(vehicle.id)
+        curLane = PanoTrafficAPI.PanoTrafficApi_GetVehicleLane(vehicle.id)
+        curRoute= PanoTrafficAPI.PanoTrafficApi_GetRoute(vehicle.id)
+        curYaw = PanoTrafficAPI.PanoTrafficApi_GetVehicleYaw(vehicle.id)
+        curS = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
+        curX = PanoTrafficAPI.PanoTrafficApi_GetVehicleX(vehicle.id)
+        curY = PanoTrafficAPI.PanoTrafficApi_GetVehicleY(vehicle.id)
+        leader_car = PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehicle.id)
+        left_leader_car = PanoTrafficAPI.PanoTrafficApi_GetLeftLeaderVehicle(vehicle.id)
+        right_leader_car = PanoTrafficAPI.PanoTrafficApi_GetRightLeaderVehicle(vehicle.id)
+        curL = PanoTrafficAPI.PanoTrafficApi_GetVehicleLateralOffset(vehicle.id)
+        curAcc = PanoTrafficAPI.PanoTrafficApi_GetVehicleAccel(vehicle.id)
+        curSpeed = PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(vehicle.id)
         g_listSaveTrajectory.append([vehicle.id,
                                      frame,
                                      curTime,
@@ -472,18 +658,18 @@ def generate_data_in_excel(userdata):
         curTime = userdata["time"]
         driving_mode = vehicle.driving_mode
         is_calculate = vehicle.is_calculate_trajectory
-        curLane = SimPlatformAPI.myGetVehicleLane(vehicle.id)
-        curRoute= SimPlatformAPI.myGetRoute(vehicle.id)
-        curYaw = SimPlatformAPI.myGetVehicleYaw(vehicle.id)
-        curS = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
-        curX = SimPlatformAPI.myGetVehicleX(vehicle.id)
-        curY = SimPlatformAPI.myGetVehicleY(vehicle.id)
-        leader_car = SimPlatformAPI.myGetLeaderVehicle(vehicle.id)
-        left_leader_car = SimPlatformAPI.myGetLeftLeaderVehicle(vehicle.id)
-        right_leader_car = SimPlatformAPI.myGetRightLeaderVehicle(vehicle.id)
-        curL = SimPlatformAPI.myGetVehicleLateralOffset(vehicle.id)
-        curAcc = SimPlatformAPI.myGetVehicleAccel(vehicle.id)
-        curSpeed = SimPlatformAPI.myGetVehicleSpeed(vehicle.id)
+        curLane = PanoTrafficAPI.PanoTrafficApi_GetVehicleLane(vehicle.id)
+        curRoute= PanoTrafficAPI.PanoTrafficApi_GetRoute(vehicle.id)
+        curYaw = PanoTrafficAPI.PanoTrafficApi_GetVehicleYaw(vehicle.id)
+        curS = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
+        curX = PanoTrafficAPI.PanoTrafficApi_GetVehicleX(vehicle.id)
+        curY = PanoTrafficAPI.PanoTrafficApi_GetVehicleY(vehicle.id)
+        leader_car = PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehicle.id)
+        left_leader_car = PanoTrafficAPI.PanoTrafficApi_GetLeftLeaderVehicle(vehicle.id)
+        right_leader_car = PanoTrafficAPI.PanoTrafficApi_GetRightLeaderVehicle(vehicle.id)
+        curL = PanoTrafficAPI.PanoTrafficApi_GetVehicleLateralOffset(vehicle.id)
+        curAcc = PanoTrafficAPI.PanoTrafficApi_GetVehicleAccel(vehicle.id)
+        curSpeed = PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(vehicle.id)
         g_listSaveTrajectory.append([curTime,
                                      vehicle.id,
                                      driving_mode,
@@ -518,8 +704,6 @@ def set_last_step_veh_update_not_done():
     把所有车在上次仿真步（不一定是前一个10ms）是否更新过的标志位设为False
     """
     for vehicle in Dao.vehicle_dictionary.values():
-        if vehicle.id == 0:
-            continue
         vehicle.is_xy_v_updated_lastT = False
 
 def check_no_last_step_trajectory_calculation():
@@ -570,8 +754,8 @@ def run_main_old(userdata):
         # trajectory.set_forecast_time(random.randint(4,8))
         update_location(vehicle, trajectory)
         '''
-        lane_id = SimPlatformAPI.myGetLaneID(vehicle.id)           
-        print(
+        lane_id = vehicle.current_lane_id           
+        log.info(
             '------vehicle:' + str(vehicle.id) + ',current mode:' + str(vehicle.driving_mode) + ',current lane:' + str(
                 lane_id) + '--------')
         '''
@@ -580,18 +764,18 @@ def run_main_old(userdata):
         curTime = userdata["time"]
         driving_mode = vehicle.driving_mode
         is_calculate = vehicle.is_calculate_trajectory
-        curLane = SimPlatformAPI.myGetVehicleLane(vehicle.id)
-        curYaw = SimPlatformAPI.myGetVehicleYaw(vehicle.id)
-        lead = SimPlatformAPI.myGetLeaderVehicle(vehicle.id)
-        curS = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
-        curX = SimPlatformAPI.myGetVehicleX(vehicle.id)
-        curY = SimPlatformAPI.myGetVehicleY(vehicle.id)
-        leader_car = SimPlatformAPI.myGetLeaderVehicle(vehicle.id)
-        left_leader_car = SimPlatformAPI.myGetLeftLeaderVehicle(vehicle.id)
-        right_leader_car = SimPlatformAPI.myGetRightLeaderVehicle(vehicle.id)
-        curL = SimPlatformAPI.myGetVehicleLateralOffset(vehicle.id)
-        curAcc = SimPlatformAPI.myGetVehicleAccel(vehicle.id)
-        curSpeed = SimPlatformAPI.myGetVehicleSpeed(vehicle.id)
+        curLane = PanoTrafficAPI.PanoTrafficApi_GetVehicleLane(vehicle.id)
+        curYaw = PanoTrafficAPI.PanoTrafficApi_GetVehicleYaw(vehicle.id)
+        lead = PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehicle.id)
+        curS = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
+        curX = PanoTrafficAPI.PanoTrafficApi_GetVehicleX(vehicle.id)
+        curY = PanoTrafficAPI.PanoTrafficApi_GetVehicleY(vehicle.id)
+        leader_car = PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehicle.id)
+        left_leader_car = PanoTrafficAPI.PanoTrafficApi_GetLeftLeaderVehicle(vehicle.id)
+        right_leader_car = PanoTrafficAPI.PanoTrafficApi_GetRightLeaderVehicle(vehicle.id)
+        curL = PanoTrafficAPI.PanoTrafficApi_GetVehicleLateralOffset(vehicle.id)
+        curAcc = PanoTrafficAPI.PanoTrafficApi_GetVehicleAccel(vehicle.id)
+        curSpeed = PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(vehicle.id)
         g_listSaveTrajectory.append([curTime,
                                      vehicle.id,
                                      driving_mode,
@@ -617,7 +801,7 @@ def update_location(vehicle: Vehicle, trajectory: Trajectory):
     """
 
     # 判断冲突区域  """当前道路的种类会影响到选择加速度更新方式，默认为normal方式"""
-    current_lane_id = SimPlatformAPI.myGetVehicleLane(vehicle.id)
+    current_lane_id = PanoTrafficAPI.PanoTrafficApi_GetVehicleLane(vehicle.id)
     try:
         current_lane = Dao.lane_dictionary[current_lane_id]
     except KeyError:
@@ -625,15 +809,12 @@ def update_location(vehicle: Vehicle, trajectory: Trajectory):
     else:
         if current_lane.type == TypesOfRoad.INTERNAL_LANE:
             vehicle.located_area = LocatedArea.INTERNAL
-            vehicle.current_lane = current_lane
-        elif SimPlatformAPI.myGetDistanceToLaneEnd(vehicle.id) < 40:
+        elif PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(vehicle.id) < 40:
             vehicle.located_area = LocatedArea.ADJACENT_JUNCTION_AREA
-            vehicle.current_lane = current_lane
             # if vehicle.driving_mode==DrivingMode.LEFT_CHANGING_LANE or vehicle.driving_mode==DrivingMode.RIGHT_CHANGING_LANE:
             #    MotivateInterface.generate_trajectory_point_set(vehicle)
         else:
             vehicle.located_area = LocatedArea.NORMAL
-            vehicle.current_lane = current_lane
 
     # 计算轨迹类
     if len(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set) < 50:
@@ -649,7 +830,7 @@ def update_location(vehicle: Vehicle, trajectory: Trajectory):
         log.error("some Exception caught in pop_point_in_trajectory {}".format(e))
         return
     else:
-        # print("根据轨迹直接更新vehicle的坐标和角度")
+        # log.info("根据轨迹直接更新vehicle的坐标和角度")
         if x is not None and y is not None and s is not None and yaw is not None:
             MotivateInterface.move_to(vehicle.id, x, y, yaw)
 
@@ -676,7 +857,7 @@ def export_lane_shape_information(userdata):
             else:
                 current_lane_id = lane.id
                 cur_lane_max_s = TrafficInterface.myGetLaneLength(current_lane_id)
-                is_dead_end = SimPlatformAPI.myIsDeadEnd(current_lane_id)
+                is_dead_end = PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id)
                 s = 0
 
                 #  while begin
@@ -719,7 +900,7 @@ def export_lane_shape_information(userdata):
                             log.info("current lane to go is {}".format(lane_to_go))
                             lane_to_go = Dao.lane_dictionary[lane_to_go].next_lane[0]  # todo 后期把这里的0改成随机数
                             to_go_lane_max_s = TrafficInterface.myGetLaneLength(lane_to_go)
-                            # to_go_lane_max_s = SimPlatformAPI.myGetLaneLength(lane_to_go)
+                            # to_go_lane_max_s = PanoTrafficAPI.PanoTrafficApi_GetLaneLength(lane_to_go)
 
                             (x, y) = TrafficInterface.getXYFromSL(lane_to_go, s, 0)
                             if x == None or y == None:

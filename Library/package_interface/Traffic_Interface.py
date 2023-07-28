@@ -102,3 +102,57 @@ class TrafficInterface(metaclass=ABCMeta):
     def vehicle_generation(self,generateMode = 0, initial_density = 0, arrivePossible = 0):
 
         raise NotImplementedError
+
+    # 函数: update_vehicle_driving_state
+    # 用途: 更新车辆所在的区域和驾驶状态
+    # [i]: Vehicle - 汽车类
+    # [o]: None
+    @abstractmethod
+    def update_vehicle_driving_state(vehicle):
+
+        raise NotImplementedError
+    
+    # 函数: set_link_in_change_lane
+    # 用途: 存储前后车位置关系
+    # [i]: int - 汽车ID,int - leaderID
+    # [o]: None
+    @abstractmethod
+    def set_link_in_change_lane(vehicle_id,leader):
+        
+        raise NotImplementedError
+    
+    # 函数: get_link_in_change_lane
+    # 用途: 获取前后车位置关系
+    # [i]: int - 汽车ID,int - leaderID
+    # [o]: None
+    @abstractmethod
+    def get_link_in_change_lane(vehicle_id,leader):
+        
+        raise NotImplementedError
+    
+    # 函数: get_link_in_change_lane
+    # 用途: 删除前后车位置关系
+    # [i]: int - 汽车ID,int - leaderID
+    # [o]: None
+    @abstractmethod
+    def del_link_in_change_lane(vehicle_id):
+        
+        raise NotImplementedError
+    
+    # 函数: get_vehicle_width
+    # 用途: 获取车辆宽度
+    # [i]: int - 汽车ID
+    # [o]: float
+    @abstractmethod
+    def get_vehicle_width(vehicle_id):
+        
+        raise NotImplementedError
+    
+    # 函数: get_vehicle_length
+    # 用途: 获取车辆长度
+    # [i]: int - 汽车ID
+    # [o]: float
+    @abstractmethod
+    def get_vehicle_length(vehicle_id):
+        
+        raise NotImplementedError

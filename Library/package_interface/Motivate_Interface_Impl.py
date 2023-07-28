@@ -1,4 +1,6 @@
 import math
+import time
+
 # import random
 # random.seed(1)
 import numpy as np
@@ -9,7 +11,8 @@ from Library.package_entity.Class_Lane import Lane
 
 rng = np.random.Generator(np.random.MT19937(1))
 
-from Library.package_platformAPI.SimPlatformAPI import SimPlatformAPI
+# from Library.package_platformAPI.SimPlatformAPI import SimPlatformAPI
+from Library import PanoTrafficApi_Python as PanoTrafficAPI
 from Library.package_entity.Class_Trajectory import Trajectory
 from Library.package_entity.Class_Vehicle import Vehicle
 from Library.package_entity.Enum_Driving_Mode import DrivingMode
@@ -39,27 +42,26 @@ class MotivateInterfaceImpl(MotivateInterface):
 
     def __init__(self):
         pass
-
+    
+    @DeprecationWarning #以前老版本的用到的计算加速度
     @classmethod
     def get_and_update_accelerator(cls, vehicle: Vehicle, trajectory: Trajectory):
 
         # 换道的时候加速度直接不变
         # if vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE or vehicle.driving_mode == DrivingMode.LEFT_CHANGING_LANE:
-        #     # print("正在换道")
+        #     # log.info("正在换道")
         #     return 0
 
         # 在路口里面时的速度更新方式
         try:
-            # current_lane_id = SimPlatformAPI.myGetVehicleLane(vehicle.id)
-
-            # 避免某些地图出现重复lane数据的情况下，用Pano提供的getVehicleLane返回的值是另外一条“同样的”lane的数据，不得已罢了，其实修改地图才是上策
-            current_lane_id = trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0][2]
+            current_lane_id = vehicle.current_lane_id
             current_lane = Dao.lane_dictionary[current_lane_id]
 
-        except KeyError:
-            print('wrong in get_and_update_accelerator')
-            log.error("some Exception caught in GetVehicleLane or KeyError: 没有在Dao中找到这条路 {}".format(
-                'trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0][2]'))
+        except:
+            log.info('len of trajectory is,',len(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set))
+            log.info('wrong in get_and_update_accelerator,some Exception caught in GetVehicleLane or KeyError: 没有在Dao中找到这条路 {',trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0][2],'}')
+            time.sleep(10)
+            #log.error("some Exception caught in GetVehicleLane or KeyError: 没有在Dao中找到这条路 {}".format(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0][2]))
             # 例如这种路(':gneJ0_0_2',':gneJ2_0_2')就不在Dao中
         else:
             # 如果是换道
@@ -73,8 +75,8 @@ class MotivateInterfaceImpl(MotivateInterface):
             # 如果接近路口了
             if vehicle.located_area == LocatedArea.ADJACENT_JUNCTION_AREA:
 
-                dis = SimPlatformAPI.myGetDistanceToLaneEnd(vehicle.id)
-                is_dead_end = SimPlatformAPI.myIsDeadEnd(current_lane_id)
+                dis = PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(vehicle.id)
+                is_dead_end = PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id)
 
                 if is_dead_end:
                     return cls.get_and_update_accelerator_normal(vehicle, trajectory)
@@ -86,35 +88,35 @@ class MotivateInterfaceImpl(MotivateInterface):
                 #     # 这样获取current lane的目的是为了避免Pano提供的GetNextLane返回的lane并不是trajectory中记录了的lane
                 #     next_lane_id=TrafficInterface.get_next_lane_by_trajectory(trajectory)
                 # except Exception as e:
-                #     print("current lane is: [",current_lane_id,'] some Exception caught in get next lane id', e)
-                #     print("next lane of current lane are:",Dao.lane_dictionary[current_lane_id].next_lane)
+                #     log.info("current lane is: [",current_lane_id,'] some Exception caught in get next lane id', e)
+                #     log.info("next lane of current lane are:",Dao.lane_dictionary[current_lane_id].next_lane)
                 #     raise e
 
                 # 是红灯或者黄灯
                 # 0:red 1:yellow 2:green 3:unknown
                 try:  # 用try 是因为有的路口是没有红绿灯的
                     direction = Dao.dicLaneToLaneDir[(current_lane_id, next_lane_id)]
-                    light_state = SimPlatformAPI.myGetTrafficLightState(vehicle.id, direction).value
+                    light_state = PanoTrafficAPI.PanoTrafficApi_GetTrafficLightState(vehicle.id, direction).value
                 except:
                     log.info("some Exception caught in GetVehicleLane or KeyError: 没有在Dao中找到这条路 {}".format(
                         current_lane_id))
                 else:
-                    # print(current_lane_id," to ",next_lane_id," is ",light_state)
+                    # log.info(current_lane_id," to ",next_lane_id," is ",light_state)
                     # 是绿灯
                     if light_state == 0:
                         return cls.get_and_update_accelerator_stop_line(vehicle, dis, trajectory)
                         # return cls.get_and_update_accelerator_normal_internal(vehicle)
 
-                    if SimPlatformAPI.myGetLeaderVehicle(vehicle.id) > -1:
+                    if PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehicle.id) > -1:
                         return cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
 
                 if vehicle.foe_vehicle is not None and vehicle.foe_vehicle in Dao.vehicle_dictionary:
                     if vehicle.located_area != LocatedArea.INTERNAL:
                         # vehicle.foe_vehicle = None
-                        foe_s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.foe_vehicle.id)
+                        foe_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.foe_vehicle.id)
 
-                        my_s = -SimPlatformAPI.myGetDistanceToLaneEnd(vehicle.id)
-                        foe_length = SimPlatformAPI.myGetVehicleLength(vehicle.foe_vehicle.id)
+                        my_s = -PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(vehicle.id)
+                        foe_length = TrafficInterface.get_vehicle_length(vehicle.foe_vehicle.id)
                         my_delta_s = vehicle.foe_vehicle.calculate_my_delta_s(my_s, foe_s, foe_length)
 
                         if my_delta_s is not None:
@@ -124,7 +126,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                                 vehicle.foe_vehicle = None
                             else:
                                 return cls.get_and_update_accelerator_internal_with_foe(vehicle, trajectory,
-                                                                                        foe_vehicle,
+                                                                                        foe_vehicle.id,
                                                                                         my_delta_s)
                         else:
                             vehicle.foe_vehicle = None
@@ -137,11 +139,11 @@ class MotivateInterfaceImpl(MotivateInterface):
                 except:
                     log.info("this lane doesn't have foe_lane_type_points_s:{}".format(next_lane_id))
                 else:
-                    leader_id = SimPlatformAPI.myGetLeaderVehicle(vehicle.id)
+                    leader_id = PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehicle.id)
                     if leader_id > -1:  # 停止线之前有leader
                         return cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
 
-                    my_s = -SimPlatformAPI.myGetDistanceToLaneEnd(vehicle.id)
+                    my_s = -PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(vehicle.id)
                     temp_foe_vehicle_map_to_my_lane_s = dict()
                     temp_foe_vehicle_related_data = dict()  # alpha,intersection_s_of_my_lane,intersection_s_of_foe_lane,foe_car_s_each,foe_lane_type_points_s_item[3]
 
@@ -150,7 +152,7 @@ class MotivateInterfaceImpl(MotivateInterface):
 
                         foe_lane_id = foe_lane_type_points_s_item[0]
                         foe_lane = Dao.lane_dictionary[foe_lane_id]
-                        foe_cars = SimPlatformAPI.myGetLaneVehicles(foe_lane_id)  # 获取foe lane 上的所有车
+                        foe_cars = PanoTrafficAPI.PanoTrafficApi_GetVehicleListInLane(foe_lane_id)  # 获取foe lane 上的所有车
 
                         if not foe_cars:
                             continue
@@ -168,7 +170,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                                 break
 
                         for foe_car_each_id in foe_cars:
-                            foe_car_s_each = SimPlatformAPI.myGetDistanceFromLaneStart(foe_car_each_id)
+                            foe_car_s_each = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(foe_car_each_id)
 
                             rest_foe_s = intersection_s_of_foe_lane - foe_car_s_each
                             map_to_my_lane_s = foe_lane_type_points_s_item[3] - rest_foe_s  # 映射到我的路上，foe车的s是多少
@@ -185,11 +187,11 @@ class MotivateInterfaceImpl(MotivateInterface):
                     if temp_foe_vehicle_map_to_my_lane_s.__len__() != 0:
                         target_foe_vehicle_id = min(temp_foe_vehicle_map_to_my_lane_s,
                                                     key=lambda x: temp_foe_vehicle_map_to_my_lane_s[x])  # 找到最小值对应的KEY
-                        foe_vehicle = Dao.vehicle_dictionary[target_foe_vehicle_id]
+                        #foe_vehicle = Dao.vehicle_dictionary[target_foe_vehicle_id]
 
-                        my_width = SimPlatformAPI.getVehicleWidth(vehicle.vehicle_type)
-                        foe_width = SimPlatformAPI.getVehicleWidth(foe_vehicle.vehicle_type)
-                        foe_length = SimPlatformAPI.myGetVehicleLength(target_foe_vehicle_id)
+                        my_width = TrafficInterface.get_vehicle_width(vehicle.id)
+                        foe_width = TrafficInterface.get_vehicle_width(target_foe_vehicle_id)
+                        foe_length = TrafficInterface.get_vehicle_length(target_foe_vehicle_id)
                         alpha = temp_foe_vehicle_related_data[target_foe_vehicle_id][0]
                         intersection_s_of_my_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][1]
                         intersection_s_of_foe_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][2]
@@ -213,10 +215,10 @@ class MotivateInterfaceImpl(MotivateInterface):
                                                              s_of_intersection_in_foe_lane,
                                                              alpha)
 
-                            my_s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
+                            my_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
                             my_delta_s = vehicle.foe_vehicle.calculate_my_delta_s(my_s, foe_car_s_each, foe_length)
 
-                            return cls.get_and_update_accelerator_internal_with_foe(vehicle, trajectory, foe_vehicle,
+                            return cls.get_and_update_accelerator_internal_with_foe(vehicle, trajectory, target_foe_vehicle_id,
                                                                                     my_delta_s)
 
                 return cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
@@ -230,10 +232,204 @@ class MotivateInterfaceImpl(MotivateInterface):
         # 判断冲突区域结束
 
     @classmethod
+    def get_and_update_accelerator_new(cls, vehicle: Vehicle):
+        # 换道的时候加速度直接不变
+        # if vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE or vehicle.driving_mode == DrivingMode.LEFT_CHANGING_LANE:
+        #     # log.info("正在换道")
+        #     return 0
+
+        # 在路口里面时的速度更新方式
+        try:
+
+            current_lane_id = vehicle.current_lane_id
+            current_lane = Dao.lane_dictionary[current_lane_id]
+
+        except:
+            log.info('wrong in get_and_update_accelerator,some Exception caught in GetVehicleLane or KeyError: 没有在Dao中找到这条路 {','current_lane_id','}')
+            time.sleep(10)
+            #log.error("some Exception caught in GetVehicleLane or KeyError: 没有在Dao中找到这条路 {}".format(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0][2]))
+            # 例如这种路(':gneJ0_0_2',':gneJ2_0_2')就不在Dao中
+        else:
+            # 如果是换道
+            if vehicle.driving_mode == DrivingMode.LEFT_CHANGING_LANE or vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE:
+                return cls.get_and_update_accelerator_change_lane_new(vehicle)
+            # 在路口内了
+            if current_lane.type == TypesOfRoad.INTERNAL_LANE:  # 现在判断lane的类型除了lane类中的type字段外，还可以用类本身是不是internal_lane
+
+                return cls.crossroad_game_model_new_new(vehicle, current_lane)
+
+            # 如果接近路口了
+            if vehicle.located_area == LocatedArea.ADJACENT_JUNCTION_AREA:
+
+                dis = PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(vehicle.id)
+                is_dead_end = PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id)
+
+                if is_dead_end:
+                    return cls.get_and_update_accelerator_normal_new(vehicle)
+
+                route_direction=rng.choice(PanoTrafficAPI.PanoTrafficApi_GetValidDirections(current_lane_id))
+                PanoTrafficAPI.PanoTrafficApi_SetVehicleRouteByDirections(vehicle.id,current_lane_id,[route_direction])
+                # route_direction=PanoTrafficAPI.PanoTrafficApi_GetRoute(vehicle.id)
+                try:
+                    next_lane_id = PanoTrafficAPI.PanoTrafficApi_GetNextLanes(current_lane_id,route_direction)[0] #这个得到的可能只是众多next_lane中的一条,以前是这样，现在不是
+                except:
+                    log.error("IndexError: list index out of range in PanoTrafficApi_GetNextLanes,current_lane_id:{},route_direction:{}".format(current_lane_id,route_direction))
+                
+
+                # try:
+                #     # next_lane_id = Dao.lane_dictionary[current_lane_id].next_lane[0] #替换为了下一行
+                #
+                #     # 这样获取current lane的目的是为了避免Pano提供的GetNextLane返回的lane并不是trajectory中记录了的lane
+                #     next_lane_id=TrafficInterface.get_next_lane_by_trajectory(trajectory)
+                # except Exception as e:
+                #     log.info("current lane is: [",current_lane_id,'] some Exception caught in get next lane id', e)
+                #     log.info("next lane of current lane are:",Dao.lane_dictionary[current_lane_id].next_lane)
+                #     raise e
+
+                # 是红灯或者黄灯
+                # 0:red 1:yellow 2:green 3:unknown
+                try:  # 用try 是因为有的路口是没有红绿灯的
+                    direction = Dao.dicLaneToLaneDir[(current_lane_id, next_lane_id)]
+                    light_state = PanoTrafficAPI.PanoTrafficApi_GetTrafficLightInfo(vehicle.id, direction)[0]
+                except:
+                    log.info("some Exception caught in GetVehicleLane or KeyError: 没有在Dao中找到这条路 {}".format(
+                        current_lane_id))
+                else:
+                    # log.info(current_lane_id," to ",next_lane_id," is ",light_state)
+                    # 是绿灯
+                    if light_state == 0:
+                        return cls.get_and_update_accelerator_stop_line_new(vehicle, dis)
+                        # return cls.get_and_update_accelerator_normal_internal(vehicle)
+
+                    if PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehicle.id) > -1:
+                        return cls.get_and_update_accelerator_normal_internal_new(vehicle)
+
+                if vehicle.foe_vehicle is not None and vehicle.foe_vehicle in Dao.vehicle_dictionary:
+                    if vehicle.located_area != LocatedArea.INTERNAL:
+                        # vehicle.foe_vehicle = None
+                        foe_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.foe_vehicle.id)
+
+                        my_s = -PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(vehicle.id)
+                        foe_length = TrafficInterface.get_vehicle_length(vehicle.foe_vehicle.id)
+                        my_delta_s = vehicle.foe_vehicle.calculate_my_delta_s(my_s, foe_s, foe_length)
+
+                        if my_delta_s is not None:
+                            try:
+                                foe_vehicle = Dao.vehicle_dictionary[vehicle.foe_vehicle.id]
+                            except:
+                                vehicle.foe_vehicle = None
+                            else:
+                                return cls.get_and_update_accelerator_internal_with_foe(vehicle,
+                                                                                        foe_vehicle.id,
+                                                                                        my_delta_s)
+                        else:
+                            vehicle.foe_vehicle = None
+
+                # 判断下一条路的冲突关系了（这里一般是internallane）
+                next_lane = Dao.lane_dictionary[next_lane_id]
+
+                try:
+                    next_lane.foe_lane_type_points_s
+                except:
+                    log.info("this lane doesn't have foe_lane_type_points_s:{}".format(next_lane_id))
+                else:
+                    leader_id = PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehicle.id)
+                    if leader_id > -1:  # 停止线之前有leader
+                        return cls.get_and_update_accelerator_normal_internal_new(vehicle)
+
+                    my_s = -PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(vehicle.id)
+                    temp_foe_vehicle_map_to_my_lane_s = dict()
+                    temp_foe_vehicle_related_data = dict()  # alpha,intersection_s_of_my_lane,intersection_s_of_foe_lane,foe_car_s_each,foe_lane_type_points_s_item[3]
+
+                    for foe_lane_type_points_s_item in next_lane.foe_lane_type_points_s:
+                        s_of_intersection_in_my_lane = foe_lane_type_points_s_item[3]
+
+                        foe_lane_id = foe_lane_type_points_s_item[0]
+                        foe_lane = Dao.lane_dictionary[foe_lane_id]
+                        foe_cars = PanoTrafficAPI.PanoTrafficApi_GetVehicleListInLane(foe_lane_id)  # 获取foe lane 上的所有车
+
+                        if not foe_cars:
+                            continue
+
+                        my_s_to_intersection = foe_lane_type_points_s_item[3] - my_s  # 我自己到交点的距离
+                        intersection_s_of_my_lane = foe_lane_type_points_s_item[3]
+                        alpha = foe_lane_type_points_s_item[4]
+                        intersection_s_of_foe_lane = 0
+                        foe_s_to_intersection = 0
+
+                        # 找到foe_lane对应的交汇处的s
+                        for foe_lane_type_points_s_item_of_foe in foe_lane.foe_lane_type_points_s:
+                            if foe_lane_type_points_s_item_of_foe[0] == next_lane.id:
+                                intersection_s_of_foe_lane = foe_lane_type_points_s_item_of_foe[3]
+                                break
+
+                        for foe_car_each_id in foe_cars:
+                            foe_car_s_each = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(foe_car_each_id)
+
+                            rest_foe_s = intersection_s_of_foe_lane - foe_car_s_each
+                            map_to_my_lane_s = foe_lane_type_points_s_item[3] - rest_foe_s  # 映射到我的路上，foe车的s是多少
+                            if map_to_my_lane_s < my_s:  # 超过我的s了，不考虑
+                                continue
+                            else:
+                                temp_foe_vehicle_map_to_my_lane_s[foe_car_each_id] = map_to_my_lane_s
+                                temp_foe_vehicle_related_data[foe_car_each_id] = (alpha,
+                                                                                  intersection_s_of_my_lane,
+                                                                                  intersection_s_of_foe_lane,
+                                                                                  foe_car_s_each,
+                                                                                  s_of_intersection_in_my_lane,
+                                                                                  intersection_s_of_foe_lane)
+                    if temp_foe_vehicle_map_to_my_lane_s.__len__() != 0:
+                        target_foe_vehicle_id = min(temp_foe_vehicle_map_to_my_lane_s,
+                                                    key=lambda x: temp_foe_vehicle_map_to_my_lane_s[x])  # 找到最小值对应的KEY
+                        #foe_vehicle = Dao.vehicle_dictionary[target_foe_vehicle_id]
+
+                        my_width = TrafficInterface.get_vehicle_width(vehicle.id)
+                        foe_width = TrafficInterface.get_vehicle_width(target_foe_vehicle_id)
+                        foe_length = TrafficInterface.get_vehicle_length(target_foe_vehicle_id)
+                        alpha = temp_foe_vehicle_related_data[target_foe_vehicle_id][0]
+                        intersection_s_of_my_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][1]
+                        intersection_s_of_foe_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][2]
+                        foe_car_s_each = temp_foe_vehicle_related_data[target_foe_vehicle_id][3]
+                        s_of_intersection_in_my_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][4]
+                        s_of_intersection_in_foe_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][5]
+
+                        foe_s_to_entry_conflict_zone, foe_s_to_leave_conflict_zone, my_stop_s_at_entry_conflict_zone = \
+                            FoeVehicle.calculate_foe_entry_and_leave_data(alpha, intersection_s_of_my_lane,
+                                                                          intersection_s_of_foe_lane, my_width,
+                                                                          foe_width, foe_length)
+                        if foe_car_s_each > foe_s_to_leave_conflict_zone:
+                            # vehicle.foe_vehicle=None
+                            return cls.get_and_update_accelerator_normal_internal_new(vehicle)
+                        else:
+                            vehicle.foe_vehicle = FoeVehicle(target_foe_vehicle_id,
+                                                             foe_s_to_entry_conflict_zone,
+                                                             foe_s_to_leave_conflict_zone,
+                                                             my_stop_s_at_entry_conflict_zone,
+                                                             s_of_intersection_in_my_lane,
+                                                             s_of_intersection_in_foe_lane,
+                                                             alpha)
+
+                            my_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
+                            my_delta_s = vehicle.foe_vehicle.calculate_my_delta_s(my_s, foe_car_s_each, foe_length)
+
+                            return cls.get_and_update_accelerator_internal_with_foe_new(vehicle, target_foe_vehicle_id,
+                                                                                    my_delta_s)
+
+                return cls.get_and_update_accelerator_normal_internal_new(vehicle)
+
+            # IDM模型
+            else:
+                # 一般情况下
+                vehicle.foe_vehicle = None
+                return cls.get_and_update_accelerator_normal_new(vehicle)
+            # return cls.get_and_update_accelerator_normal(vehicle, trajectory)
+        # 判断冲突区域结束
+
+    @classmethod
     def crossroad_game_model_old(cls, vehicle: Vehicle, trajectory: Trajectory, current_lane: InternalLane):
 
-        # print("Internal [",vehicle.id, "] is on ", current_lane_id)
-        s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
+        # log.info("Internal [",vehicle.id, "] is on ", current_lane_id)
+        s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
         # 只判断最近的车的写法
         potential_foe_vehicles_inter_s = []  # {冲突车，冲突车交点距离，当前车到交点距离}
 
@@ -248,9 +444,9 @@ class MotivateInterfaceImpl(MotivateInterface):
 
             if s < foe_lane_type_points_s_item[3]:
 
-                leader = SimPlatformAPI.myGetLeaderVehicle(vehicle.id)
+                leader = PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehicle.id)
                 if leader > -1:
-                    leader_s = SimPlatformAPI.myGetDistanceFromLaneStart(leader)
+                    leader_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(leader)
                     if leader_s < foe_lane_type_points_s_item[3]:
                         continue
 
@@ -260,7 +456,7 @@ class MotivateInterfaceImpl(MotivateInterface):
 
                 foe_lane_id = foe_lane_type_points_s_item[0]
                 foe_lane = Dao.lane_dictionary[foe_lane_id]
-                foe_cars = SimPlatformAPI.myGetLaneVehicles(foe_lane_id)  # 获取foe lane 上的所有车
+                foe_cars = PanoTrafficAPI.PanoTrafficApi_GetVehicleListInLane(foe_lane_id)  # 获取foe lane 上的所有车
 
                 if not foe_cars:
                     continue
@@ -275,10 +471,10 @@ class MotivateInterfaceImpl(MotivateInterface):
                 delta = 10000  # 给一个极大值
                 foe_car_block_road = False
                 for foe_car_each in foe_cars:
-                    # foe_car_lane_id = SimPlatformAPI.myGetVehicleLane(foe_car_each)
-                    foe_car_s_each = SimPlatformAPI.myGetDistanceFromLaneStart(foe_car_each)
-                    total_s = foe_s + SimPlatformAPI.myGetVehicleLength(foe_car_each) + SimPlatformAPI.getVehicleWidth(
-                        vehicle.vehicle_type) / 2 + 3  # 车尾离开冲突点总行驶距离，加3是为了留有通行余量
+                    # foe_car_lane_id = PanoTrafficAPI.PanoTrafficApi_GetVehicleLane(foe_car_each)
+                    foe_car_s_each = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(foe_car_each)
+                    total_s = foe_s + TrafficInterface.get_vehicle_length(foe_car_each) + TrafficInterface.get_vehicle_width(
+                        vehicle.id) / 2 + 3  # 车尾离开冲突点总行驶距离，加3是为了留有通行余量
                     # # 车头到foe点的距离
                     # distance_from_head = abs(foe_s - foe_car_s_each)  # TODO 算距离这里还可以简化
                     # 车尾到foe点的距离
@@ -288,7 +484,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                         delta = foe_car_s_each
                         real_foe_car = foe_car_each
                         rest_foe_s = total_s - foe_car_s_each
-                        if foe_car_s_each > foe_s - SimPlatformAPI.getVehicleWidth(
+                        if foe_car_s_each > foe_s - TrafficInterface.get_vehicle_widthByType(
                                 vehicle.vehicle_type) / 2 - 3:  # -3是为了余量
                             foe_car_block_road = True
                         else:
@@ -298,19 +494,19 @@ class MotivateInterfaceImpl(MotivateInterface):
                     foe_vehicle = Dao.vehicle_dictionary[real_foe_car]
                     potential_foe_vehicles_inter_s.append(
                         (foe_vehicle, rest_foe_s, foe_car_block_road,
-                         foe_lane_type_points_s_item[3] + SimPlatformAPI.myGetVehicleLength(
-                             vehicle.id) + SimPlatformAPI.getVehicleWidth(foe_vehicle.vehicle_type) / 2 - s + 3))
-        # print("potential_foe_vehicles_inter_s are:",potential_foe_vehicles_inter_s)
+                         foe_lane_type_points_s_item[3] + TrafficInterface.get_vehicle_length(
+                             vehicle.id) + TrafficInterface.get_vehicle_width(foe_vehicle.id) / 2 - s + 3))
+        # log.info("potential_foe_vehicles_inter_s are:",potential_foe_vehicles_inter_s)
 
         # 没有搜索到敌对车
         if not potential_foe_vehicles_inter_s:
-            # print("在路口内")
-            # print("没有搜索到敌对车")
+            # log.info("在路口内")
+            # log.info("没有搜索到敌对车")
             return cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
         # 有敌对车
         else:
-            # print("在路口内")
-            # print("有敌对车")
+            # log.info("在路口内")
+            # log.info("有敌对车")
             all_acc = []
             for item in potential_foe_vehicles_inter_s:
                 log.info("{},{},{},{}".format(item[0].id, item[1], item[2], item[3]))
@@ -322,7 +518,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                     cls.get_and_update_accelerator_internal_by_distance(vehicle, trajectory, rest_s, target_vehicle,
                                                                         foe_rest_s, foe_car_block_road))
 
-            # print(vehicle.id," accs are:",all_acc)
+            # log.info(vehicle.id," accs are:",all_acc)
             return min(all_acc)
             # closest_dis = 10000
             # target_vehicle = None
@@ -330,21 +526,22 @@ class MotivateInterfaceImpl(MotivateInterface):
             # foe_rest_s = 0  # foe车到交点的距离
             # foe_car_block_road=False
             # for item in potential_foe_vehicles_inter_s:
-            #     temp = TrafficInterface.two_car_distance(item[0].id, vehicle.id)
-            #     print("temp is",temp)
+            #     temp = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(item[0].id, vehicle.id)
+            #     log.info("temp is",temp)
             #     if temp < closest_dis:
             #         closest_dis = temp
             #         target_vehicle = item[0]
             #         foe_rest_s = item[1]
             #         foe_car_block_road=item[2]
             #         rest_s = item[3]
-            # print("target_vehicle is", target_vehicle.id)
+            # log.info("target_vehicle is", target_vehicle.id)
             # return cls.get_and_update_accelerator_internal(vehicle, rest_s, target_vehicle, foe_rest_s,foe_car_block_road)
 
+    @DeprecationWarning
     @classmethod
     def crossroad_game_model_new(cls, vehicle: Vehicle, trajectory: Trajectory, current_lane: InternalLane):
 
-        s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
+        s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
         temp_foe_vehicle_map_to_my_lane_s = dict()
         temp_foe_vehicle_related_data = dict()  # alpha,intersection_s_of_my_lane,intersection_s_of_foe_lane,foe_car_s_each,foe_lane_type_points_s_item[3]
         find_new_foe_car = False
@@ -353,10 +550,10 @@ class MotivateInterfaceImpl(MotivateInterface):
         #     foe_vehicle=Dao.vehicle_dictionary[vehicle.foe_vehicle.id]
         #     if foe_vehicle.located_area!=LocatedArea.INTERNAL:
         #         #vehicle.foe_vehicle = None
-        #         foe_s = vehicle.foe_vehicle.s_of_intersection_in_foe_lane+SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.foe_vehicle.id)
+        #         foe_s = vehicle.foe_vehicle.s_of_intersection_in_foe_lane+PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.foe_vehicle.id)
         #
-        #         my_s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
-        #         foe_length = SimPlatformAPI.myGetVehicleLength(vehicle.foe_vehicle.id)
+        #         my_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
+        #         foe_length = TrafficInterface.get_vehicle_length(vehicle.foe_vehicle.id)
         #         my_delta_s = vehicle.foe_vehicle.calculate_my_delta_s(my_s, foe_s, foe_length)
         #
         #         if my_delta_s is not None:
@@ -366,10 +563,10 @@ class MotivateInterfaceImpl(MotivateInterface):
         #         else:
         #             vehicle.foe_vehicle = None
         #     else:
-        #         foe_s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.foe_vehicle.id)
+        #         foe_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.foe_vehicle.id)
         #
-        #         my_s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
-        #         foe_length = SimPlatformAPI.myGetVehicleLength(vehicle.foe_vehicle.id)
+        #         my_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
+        #         foe_length = TrafficInterface.get_vehicle_length(vehicle.foe_vehicle.id)
         #         my_delta_s = vehicle.foe_vehicle.calculate_my_delta_s(my_s, foe_s, foe_length)
         #
         #         if my_delta_s is not None:
@@ -379,10 +576,10 @@ class MotivateInterfaceImpl(MotivateInterface):
         #         else:
         #             vehicle.foe_vehicle = None
 
-        leader_id = SimPlatformAPI.myGetLeaderVehicle(vehicle.id)
+        leader_id = PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehicle.id)
         leader_s = 10000
         if leader_id > -1:
-            leader_s = SimPlatformAPI.myGetDistanceFromLaneStart(leader_id)
+            leader_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(leader_id)
 
         for foe_lane_type_points_s_item in current_lane.foe_lane_type_points_s:
             s_of_intersection_in_my_lane = foe_lane_type_points_s_item[3]
@@ -391,7 +588,7 @@ class MotivateInterfaceImpl(MotivateInterface):
 
                 foe_lane_id = foe_lane_type_points_s_item[0]
                 foe_lane = Dao.lane_dictionary[foe_lane_id]
-                foe_cars = SimPlatformAPI.myGetLaneVehicles(foe_lane_id)  # 获取foe lane 上的所有车
+                foe_cars = PanoTrafficAPI.PanoTrafficApi_GetVehicleListInLane(foe_lane_id)  # 获取foe lane 上的所有车
 
                 if not foe_cars:
                     continue
@@ -410,7 +607,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                         break
 
                 for foe_car_each_id in foe_cars:
-                    foe_car_s_each = SimPlatformAPI.myGetDistanceFromLaneStart(foe_car_each_id)
+                    foe_car_s_each = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(foe_car_each_id)
 
                     rest_foe_s = intersection_s_of_foe_lane - foe_car_s_each
                     map_to_my_lane_s = foe_lane_type_points_s_item[3] - rest_foe_s  # 映射到我的路上，foe车的s是多少
@@ -432,7 +629,7 @@ class MotivateInterfaceImpl(MotivateInterface):
         #
         #     my_width = SimPlatformAPI.getVehicleWidth(vehicle.vehicle_type)
         #     foe_width = SimPlatformAPI.getVehicleWidth(foe_vehicle.vehicle_type)
-        #     foe_length = SimPlatformAPI.myGetVehicleLength(target_foe_vehicle_id)
+        #     foe_length = TrafficInterface.get_vehicle_length(target_foe_vehicle_id)
         #     alpha = temp_foe_vehicle_related_data[target_foe_vehicle_id][0]
         #     intersection_s_of_my_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][1]
         #     intersection_s_of_foe_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][2]
@@ -456,7 +653,7 @@ class MotivateInterfaceImpl(MotivateInterface):
         #                                          s_of_intersection_in_foe_lane,
         #                                          alpha)
         #
-        #         my_s=SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
+        #         my_s=PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
         #         my_delta_s = vehicle.foe_vehicle.calculate_my_delta_s(my_s, foe_car_s_each, foe_length)
         #
         #         return cls.get_and_update_accelerator_internal_with_foe(vehicle, trajectory,foe_vehicle, my_delta_s)
@@ -464,11 +661,11 @@ class MotivateInterfaceImpl(MotivateInterface):
         if temp_foe_vehicle_map_to_my_lane_s.__len__() != 0:
             all_my_stop_s_at_entry_conflict_zone = dict()
             for temp_foe_vehicle_id in list(temp_foe_vehicle_related_data.keys()):
-                foe_vehicle = Dao.vehicle_dictionary[temp_foe_vehicle_id]
+                #foe_vehicle = Dao.vehicle_dictionary[temp_foe_vehicle_id] 屏蔽是为了控制部分车的时候不出现问题
 
-                my_width = SimPlatformAPI.getVehicleWidth(vehicle.vehicle_type)
-                foe_width = SimPlatformAPI.getVehicleWidth(foe_vehicle.vehicle_type)
-                foe_length = SimPlatformAPI.myGetVehicleLength(temp_foe_vehicle_id)
+                my_width = TrafficInterface.get_vehicle_width(vehicle.id)
+                foe_width = TrafficInterface.get_vehicle_width(temp_foe_vehicle_id)
+                foe_length = TrafficInterface.get_vehicle_length(temp_foe_vehicle_id)
                 alpha = temp_foe_vehicle_related_data[temp_foe_vehicle_id][0]
                 intersection_s_of_my_lane = temp_foe_vehicle_related_data[temp_foe_vehicle_id][1]
                 intersection_s_of_foe_lane = temp_foe_vehicle_related_data[temp_foe_vehicle_id][2]
@@ -490,11 +687,11 @@ class MotivateInterfaceImpl(MotivateInterface):
 
             target_foe_vehicle_id = min(all_my_stop_s_at_entry_conflict_zone,
                                         key=lambda x: all_my_stop_s_at_entry_conflict_zone[x])  # 找到最小值对应的KEY
-            foe_vehicle = Dao.vehicle_dictionary[target_foe_vehicle_id]
+            #foe_vehicle = Dao.vehicle_dictionary[target_foe_vehicle_id] 屏蔽是为了控制部分车的时候不出现问题
 
-            my_width = SimPlatformAPI.getVehicleWidth(vehicle.vehicle_type)
-            foe_width = SimPlatformAPI.getVehicleWidth(foe_vehicle.vehicle_type)
-            foe_length = SimPlatformAPI.myGetVehicleLength(target_foe_vehicle_id)
+            my_width = TrafficInterface.get_vehicle_width(vehicle.id)
+            foe_width = TrafficInterface.get_vehicle_width(target_foe_vehicle_id)
+            foe_length = TrafficInterface.get_vehicle_length(target_foe_vehicle_id)
             alpha = temp_foe_vehicle_related_data[target_foe_vehicle_id][0]
             intersection_s_of_my_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][1]
             intersection_s_of_foe_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][2]
@@ -514,17 +711,199 @@ class MotivateInterfaceImpl(MotivateInterface):
                                              s_of_intersection_in_foe_lane,
                                              alpha)
 
-            my_s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
+            my_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
             my_delta_s = vehicle.foe_vehicle.calculate_my_delta_s(my_s, foe_car_s_each, foe_length)
 
-            return cls.get_and_update_accelerator_internal_with_foe(vehicle, trajectory, foe_vehicle, my_delta_s)
+            return cls.get_and_update_accelerator_internal_with_foe(vehicle, trajectory, target_foe_vehicle_id, my_delta_s)
 
         else:
             return cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
 
     @classmethod
+    def crossroad_game_model_new_new(cls, vehicle: Vehicle, current_lane: InternalLane):
+
+        s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
+        temp_foe_vehicle_map_to_my_lane_s = dict()
+        temp_foe_vehicle_related_data = dict()  # alpha,intersection_s_of_my_lane,intersection_s_of_foe_lane,foe_car_s_each,foe_lane_type_points_s_item[3]
+        find_new_foe_car = False
+
+        # if vehicle.foe_vehicle is not None:
+        #     foe_vehicle=Dao.vehicle_dictionary[vehicle.foe_vehicle.id]
+        #     if foe_vehicle.located_area!=LocatedArea.INTERNAL:
+        #         #vehicle.foe_vehicle = None
+        #         foe_s = vehicle.foe_vehicle.s_of_intersection_in_foe_lane+PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.foe_vehicle.id)
+        #
+        #         my_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
+        #         foe_length = TrafficInterface.get_vehicle_length(vehicle.foe_vehicle.id)
+        #         my_delta_s = vehicle.foe_vehicle.calculate_my_delta_s(my_s, foe_s, foe_length)
+        #
+        #         if my_delta_s is not None:
+        #             foe_vehicle = Dao.vehicle_dictionary[vehicle.foe_vehicle.id]
+        #             return cls.get_and_update_accelerator_internal_with_foe(vehicle, trajectory, foe_vehicle,
+        #                                                                     my_delta_s)
+        #         else:
+        #             vehicle.foe_vehicle = None
+        #     else:
+        #         foe_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.foe_vehicle.id)
+        #
+        #         my_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
+        #         foe_length = TrafficInterface.get_vehicle_length(vehicle.foe_vehicle.id)
+        #         my_delta_s = vehicle.foe_vehicle.calculate_my_delta_s(my_s, foe_s, foe_length)
+        #
+        #         if my_delta_s is not None:
+        #             foe_vehicle = Dao.vehicle_dictionary[vehicle.foe_vehicle.id]
+        #             return cls.get_and_update_accelerator_internal_with_foe(vehicle, trajectory, foe_vehicle,
+        #                                                                     my_delta_s)
+        #         else:
+        #             vehicle.foe_vehicle = None
+
+        leader_id = PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehicle.id)
+        leader_s = 10000
+        if leader_id > -1:
+            leader_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(leader_id)
+
+        for foe_lane_type_points_s_item in current_lane.foe_lane_type_points_s:
+            s_of_intersection_in_my_lane = foe_lane_type_points_s_item[3]
+
+            if s < s_of_intersection_in_my_lane and s_of_intersection_in_my_lane < leader_s:  # 这是一条很重要的条件
+
+                foe_lane_id = foe_lane_type_points_s_item[0]
+                foe_lane = Dao.lane_dictionary[foe_lane_id]
+                foe_cars = PanoTrafficAPI.PanoTrafficApi_GetVehicleListInLane(foe_lane_id)  # 获取foe lane 上的所有车
+
+                if not foe_cars:
+                    continue
+
+                my_s = s
+                my_s_to_intersection = foe_lane_type_points_s_item[3] - my_s  # 我自己到交点的距离
+                intersection_s_of_my_lane = foe_lane_type_points_s_item[3]
+                alpha = foe_lane_type_points_s_item[4]
+                intersection_s_of_foe_lane = 0
+                foe_s_to_intersection = 0
+
+                # 找到foe_lane对应的交汇处的s
+                for foe_lane_type_points_s_item_of_foe in foe_lane.foe_lane_type_points_s:
+                    if foe_lane_type_points_s_item_of_foe[0] == current_lane.id:
+                        intersection_s_of_foe_lane = foe_lane_type_points_s_item_of_foe[3]
+                        break
+
+                for foe_car_each_id in foe_cars:
+                    foe_car_s_each = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(foe_car_each_id)
+
+                    rest_foe_s = intersection_s_of_foe_lane - foe_car_s_each
+                    map_to_my_lane_s = foe_lane_type_points_s_item[3] - rest_foe_s  # 映射到我的路上，foe车的s是多少
+                    if map_to_my_lane_s > leader_s or map_to_my_lane_s < my_s:  # 超过我的leader的s了，不考虑；一旦在待转区域，所有车都是我的考虑车
+                        continue
+                    else:
+                        temp_foe_vehicle_map_to_my_lane_s[foe_car_each_id] = map_to_my_lane_s
+                        temp_foe_vehicle_related_data[foe_car_each_id] = (alpha,
+                                                                          intersection_s_of_my_lane,
+                                                                          intersection_s_of_foe_lane,
+                                                                          foe_car_s_each,
+                                                                          s_of_intersection_in_my_lane,
+                                                                          intersection_s_of_foe_lane)
+
+        # if temp_foe_vehicle_map_to_my_lane_s.__len__() !=0 :
+        #     target_foe_vehicle_id = min(temp_foe_vehicle_map_to_my_lane_s,
+        #                                 key=lambda x: temp_foe_vehicle_map_to_my_lane_s[x])  # 找到最小值对应的KEY
+        #     foe_vehicle = Dao.vehicle_dictionary[target_foe_vehicle_id]
+        #
+        #     my_width = SimPlatformAPI.getVehicleWidth(vehicle.vehicle_type)
+        #     foe_width = SimPlatformAPI.getVehicleWidth(foe_vehicle.vehicle_type)
+        #     foe_length = TrafficInterface.get_vehicle_length(target_foe_vehicle_id)
+        #     alpha = temp_foe_vehicle_related_data[target_foe_vehicle_id][0]
+        #     intersection_s_of_my_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][1]
+        #     intersection_s_of_foe_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][2]
+        #     foe_car_s_each = temp_foe_vehicle_related_data[target_foe_vehicle_id][3]
+        #     s_of_intersection_in_my_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][4]
+        #     s_of_intersection_in_foe_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][5]
+        #
+        #     foe_s_to_entry_conflict_zone, foe_s_to_leave_conflict_zone, my_stop_s_at_entry_conflict_zone = \
+        #         FoeVehicle.calculate_foe_entry_and_leave_data(alpha, intersection_s_of_my_lane,
+        #                                                       intersection_s_of_foe_lane, my_width,
+        #                                                       foe_width, foe_length)
+        #     if foe_car_s_each > foe_s_to_leave_conflict_zone:
+        #         vehicle.foe_vehicle=None
+        #         return cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
+        #     else:
+        #         vehicle.foe_vehicle = FoeVehicle(target_foe_vehicle_id,
+        #                                          foe_s_to_entry_conflict_zone,
+        #                                          foe_s_to_leave_conflict_zone,
+        #                                          my_stop_s_at_entry_conflict_zone,
+        #                                          s_of_intersection_in_my_lane,
+        #                                          s_of_intersection_in_foe_lane,
+        #                                          alpha)
+        #
+        #         my_s=PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
+        #         my_delta_s = vehicle.foe_vehicle.calculate_my_delta_s(my_s, foe_car_s_each, foe_length)
+        #
+        #         return cls.get_and_update_accelerator_internal_with_foe(vehicle, trajectory,foe_vehicle, my_delta_s)
+
+        if temp_foe_vehicle_map_to_my_lane_s.__len__() != 0:
+            all_my_stop_s_at_entry_conflict_zone = dict()
+            for temp_foe_vehicle_id in list(temp_foe_vehicle_related_data.keys()):
+                #foe_vehicle = Dao.vehicle_dictionary[temp_foe_vehicle_id] 屏蔽是为了控制部分车的时候不出现问题
+
+                my_width = TrafficInterface.get_vehicle_width(vehicle.id)
+                foe_width = TrafficInterface.get_vehicle_width(temp_foe_vehicle_id)
+                foe_length = TrafficInterface.get_vehicle_length(temp_foe_vehicle_id)
+                alpha = temp_foe_vehicle_related_data[temp_foe_vehicle_id][0]
+                intersection_s_of_my_lane = temp_foe_vehicle_related_data[temp_foe_vehicle_id][1]
+                intersection_s_of_foe_lane = temp_foe_vehicle_related_data[temp_foe_vehicle_id][2]
+                foe_car_s_each = temp_foe_vehicle_related_data[temp_foe_vehicle_id][3]
+
+                foe_s_to_entry_conflict_zone, foe_s_to_leave_conflict_zone, my_stop_s_at_entry_conflict_zone = \
+                    FoeVehicle.calculate_foe_entry_and_leave_data(alpha, intersection_s_of_my_lane,
+                                                                  intersection_s_of_foe_lane, my_width,
+                                                                  foe_width, foe_length)
+
+                if foe_car_s_each > foe_s_to_leave_conflict_zone:
+                    continue
+                else:
+                    all_my_stop_s_at_entry_conflict_zone[temp_foe_vehicle_id] = my_stop_s_at_entry_conflict_zone
+
+            if all_my_stop_s_at_entry_conflict_zone.__len__() == 0:
+                vehicle.foe_vehicle = None
+                return cls.get_and_update_accelerator_normal_internal_new(vehicle)
+
+            target_foe_vehicle_id = min(all_my_stop_s_at_entry_conflict_zone,
+                                        key=lambda x: all_my_stop_s_at_entry_conflict_zone[x])  # 找到最小值对应的KEY
+            #foe_vehicle = Dao.vehicle_dictionary[target_foe_vehicle_id] 屏蔽是为了控制部分车的时候不出现问题
+
+            my_width = TrafficInterface.get_vehicle_width(vehicle.id)
+            foe_width = TrafficInterface.get_vehicle_width(target_foe_vehicle_id)
+            foe_length = TrafficInterface.get_vehicle_length(target_foe_vehicle_id)
+            alpha = temp_foe_vehicle_related_data[target_foe_vehicle_id][0]
+            intersection_s_of_my_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][1]
+            intersection_s_of_foe_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][2]
+            foe_car_s_each = temp_foe_vehicle_related_data[target_foe_vehicle_id][3]
+            s_of_intersection_in_my_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][4]
+            s_of_intersection_in_foe_lane = temp_foe_vehicle_related_data[target_foe_vehicle_id][5]
+
+            foe_s_to_entry_conflict_zone, foe_s_to_leave_conflict_zone, my_stop_s_at_entry_conflict_zone = \
+                FoeVehicle.calculate_foe_entry_and_leave_data(alpha, intersection_s_of_my_lane,
+                                                              intersection_s_of_foe_lane, my_width,
+                                                              foe_width, foe_length)
+            vehicle.foe_vehicle = FoeVehicle(target_foe_vehicle_id,
+                                             foe_s_to_entry_conflict_zone,
+                                             foe_s_to_leave_conflict_zone,
+                                             my_stop_s_at_entry_conflict_zone,
+                                             s_of_intersection_in_my_lane,
+                                             s_of_intersection_in_foe_lane,
+                                             alpha)
+
+            my_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
+            my_delta_s = vehicle.foe_vehicle.calculate_my_delta_s(my_s, foe_car_s_each, foe_length)
+
+            return cls.get_and_update_accelerator_internal_with_foe_new(vehicle, target_foe_vehicle_id, my_delta_s)
+
+        else:
+            return cls.get_and_update_accelerator_normal_internal_new(vehicle)
+
+
+    @classmethod
     def crossroad_game_model_ST(cls, vehicle: Vehicle, trajectory: Trajectory, current_lane: InternalLane):
-        s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
+        s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
         # 只判断最近的车的写法
         potential_foe_vehicles_inter_s = []  # {冲突车，冲突车交点距离，当前车到交点距离}
 
@@ -544,7 +923,7 @@ class MotivateInterfaceImpl(MotivateInterface):
 
                 foe_lane_id = foe_lane_type_points_s_item[0]
                 foe_lane = Dao.lane_dictionary[foe_lane_id]
-                foe_cars = SimPlatformAPI.myGetLaneVehicles(foe_lane_id)  # 获取foe lane 上的所有车
+                foe_cars = PanoTrafficAPI.PanoTrafficApi_GetVehicleListInLane(foe_lane_id)  # 获取foe lane 上的所有车
 
                 if not foe_cars:
                     continue
@@ -561,15 +940,15 @@ class MotivateInterfaceImpl(MotivateInterface):
                 for foe_car_each in foe_cars:
                     # TODO 这一块应该改成计算两车间的距离
 
-                    # foe_car_lane_id = SimPlatformAPI.myGetVehicleLane(foe_car_each)
-                    foe_car_s_each = SimPlatformAPI.myGetDistanceFromLaneStart(foe_car_each)
-                    total_s = foe_s + SimPlatformAPI.getVehicleWidth(
-                        vehicle.vehicle_type) / 2 + SimPlatformAPI.myGetVehicleLength(foe_car_each)  # 车尾离开冲突区域总行驶距离
+                    # foe_car_lane_id = PanoTrafficAPI.PanoTrafficApi_GetVehicleLane(foe_car_each)
+                    foe_car_s_each = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(foe_car_each)
+                    total_s = foe_s + TrafficInterface.get_vehicle_width(
+                        vehicle.id) / 2 + TrafficInterface.get_vehicle_length(foe_car_each)  # 车尾离开冲突区域总行驶距离
                     # 车头到foe点的距离
                     distance_from_head = abs(foe_s - foe_car_s_each)  # TODO 算距离这里还可以简化
                     # 车尾到foe点的距离
                     distance_from_end = abs(
-                        foe_s - (foe_car_s_each - SimPlatformAPI.myGetVehicleLength(foe_car_each)))
+                        foe_s - (foe_car_s_each - TrafficInterface.get_vehicle_length(foe_car_each)))
                     min_distance = min(distance_from_head, distance_from_end)
                     if foe_car_s_each < total_s and min_distance < delta:
                         delta = min_distance
@@ -621,8 +1000,8 @@ class MotivateInterfaceImpl(MotivateInterface):
             acc = 0  # 保持匀速行驶
             return acc
         else:
-            half_of_foe_car_length = SimPlatformAPI.myGetVehicleLength(foe_vehicle.id) / 2
-            half_of_foe_car_width = SimPlatformAPI.getVehicleWidth(foe_vehicle.vehicle_type) / 2
+            half_of_foe_car_length = TrafficInterface.get_vehicle_length(foe_vehicle.id) / 2
+            half_of_foe_car_width = TrafficInterface.get_vehicle_width(foe_vehicle.id) / 2
             half_of_foe_car_diagonal_length = pow(half_of_foe_car_length ** 2 + half_of_foe_car_width ** 2, 1 / 2)
             t_2 = foe_dis_to_intersection / foe_vehicle.current_speed
             s = dis_to_intersection - half_of_foe_car_diagonal_length
@@ -630,6 +1009,7 @@ class MotivateInterfaceImpl(MotivateInterface):
 
             return a
 
+    @DeprecationWarning
     @staticmethod
     def get_and_update_accelerator_normal(vehicle, trajectory: Trajectory) -> int:
         """private方法，返回idm跟驰模型下的加速度"""
@@ -659,7 +1039,7 @@ class MotivateInterfaceImpl(MotivateInterface):
         """以下是IDM模型公式计算"""
 
         if leader < -1:  # invalid，前方无路
-            # print(str(vehicle.id) + "前方无路")
+            # log.info(str(vehicle.id) + "前方无路")
             acc = a_max * (1. - pow((current_speed / v_desired), delta))
         else:
             if leader == -1:  # 前方无车
@@ -668,17 +1048,17 @@ class MotivateInterfaceImpl(MotivateInterface):
                 try:  # 主车存在的情况下，超出接管范围的车不在dao中，如果出现key error，就用pano接口获取前车速度
                     leader_vehicle = Dao.vehicle_dictionary[leader]
                 except:
-                    leader_speed=SimPlatformAPI.myGetVehicleSpeed(leader)
+                    leader_speed=PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(leader)
 
                 else:
 
                     leader_speed=leader_vehicle.current_speed
 
 
-                two_car_distance = TrafficInterface.two_car_distance(vehicle.id, leader)
+                two_car_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id, leader)
 
 
-                s_delta = two_car_distance - SimPlatformAPI.myGetVehicleLength(leader)  # 车辆间距
+                s_delta = two_car_distance - TrafficInterface.get_vehicle_length(leader)  # 车辆间距
                 if s_delta < 0:
                     s_delta = 0.001
                 v_delta = current_speed - leader_speed  # 前后车速度差绝对值
@@ -689,10 +1069,116 @@ class MotivateInterfaceImpl(MotivateInterface):
         return acc
 
     @staticmethod
+    def get_and_update_accelerator_normal_new(vehicle) -> int:
+        """private方法，返回idm跟驰模型下的加速度"""
+        # a_max = 2  # 最大加速度
+        # v_desired = 70 / 3.6  # 汽车行驶期望速度
+        a_max = vehicle.max_accel  # 最大加速度
+        v_desired = min(80 / 3.6, vehicle.max_v / 3.6)  # 汽车行驶期望速度
+        delta = 4  # 自由加速指数δ
+        t_desired = 1.5  # 汽车安全车头时距T
+        s0 = 3  # 最小安全间距
+        b_comfortable = 2  # 期望舒适减速度
+
+        current_speed = vehicle.current_speed  # 当前车速
+        # current_speed = myGetVehicleSpeed(vehicle.id)
+        if current_speed < 0:
+            log.info("the current_speed is lower than 0,PLS check the logic or API")
+            current_speed = 0
+
+        """
+        if current_speed < -5:
+            current_speed = -5
+            
+        """
+
+        leader_info = PanoTrafficAPI.PanoTrafficApi_GetLeader(vehicle.id) #tuple[Any,Any,Any]
+        leader_changing_lane_id=TrafficInterface.get_link_in_change_lane(vehicle.id) #TODO 后续需要再根据新函数取消备选前车的获取机制
+        leader_changing_lane=Dao.get_vehicle_by_id(leader_changing_lane_id)
+        if leader_changing_lane_id>-1 and leader_changing_lane is None: #该车之前在关系字典中，但是该仿真步已经不在地图中，就该删除此关系
+            log.info("going to delete link between:{} and leader in changing lane:{}".format(vehicle.id,leader_changing_lane_id))
+            TrafficInterface.del_link_in_change_lane(vehicle.id)
+        elif leader_changing_lane is not None and leader_changing_lane.driving_mode == DrivingMode.FOLLOW_DRIVING:
+            leader_changing_lane=None
+            TrafficInterface.del_link_in_change_lane(vehicle.id)
+
+        """以下是IDM模型公式计算"""
+
+        if leader_info[0]<=-1 and  leader_changing_lane is None:
+            # log.info(str(vehicle.id) + "前方无路")
+            acc = a_max * (1. - pow((current_speed / v_desired), delta))
+        
+        elif leader_info[0]>-1 and leader_changing_lane is None:
+            try:  # 主车存在的情况下，超出接管范围的车不在dao中，如果出现key error，就用pano接口获取前车速度
+                leader_vehicle = Dao.vehicle_dictionary[leader_info[0]]
+            except:
+                leader_speed=PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(leader_info[0])
+
+            else:
+
+                leader_speed=leader_vehicle.current_speed
+
+
+            #two_car_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id, leader)
+            #s_delta = two_car_distance - TrafficInterface.get_vehicle_length(leader)  # 车辆间距
+            
+            s_delta = leader_info[1]
+
+            if s_delta < 0:
+                s_delta = 0.001
+            v_delta = current_speed - leader_speed  # 前后车速度差绝对值
+            s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
+                    2. * pow(a_max * b_comfortable, 0.5))  # 理想期望间距
+            acc = a_max * (1. - pow((current_speed / v_desired), delta) - pow(s_star / s_delta, 2.))
+
+        elif leader_info[0]<=-1 and leader_changing_lane is not None:
+            leader_speed=PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(leader_changing_lane_id)
+
+
+            two_car_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(leader_changing_lane_id,vehicle.id)
+            s_delta = two_car_distance - TrafficInterface.get_vehicle_length(leader_changing_lane_id)  # 车辆间距
+            
+            
+
+            if s_delta < 0:
+                s_delta = 0.001
+            v_delta = current_speed - leader_speed  # 前后车速度差绝对值
+            s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
+                    2. * pow(a_max * b_comfortable, 0.5))  # 理想期望间距
+            acc = a_max * (1. - pow((current_speed / v_desired), delta) - pow(s_star / s_delta, 2.))
+
+        elif leader_info[0]>-1 and leader_changing_lane is not None:
+            leader_vehicle_id = leader_info[0]
+
+            s_of_leader_vehicle=PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(leader_vehicle_id)
+            s_of_leader_in_other_lane_vehicle=PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(leader_changing_lane_id)
+
+            #自己车道上leader更近
+            if s_of_leader_vehicle<s_of_leader_in_other_lane_vehicle: 
+                leader_speed=PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(leader_info[0])
+                s_delta = leader_info[1]
+            #其他车道上正在换道的车更近
+            else:
+                leader_speed=PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(leader_changing_lane_id)
+                two_car_distance = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(leader_vehicle_id,vehicle.id)
+                s_delta = two_car_distance - TrafficInterface.get_vehicle_length(leader_vehicle_id)  # 车辆间距
+            
+
+            if s_delta < 0:
+                s_delta = 0.001
+            v_delta = current_speed - leader_speed  # 前后车速度差绝对值
+            s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
+                    2. * pow(a_max * b_comfortable, 0.5))  # 理想期望间距
+            acc = a_max * (1. - pow((current_speed / v_desired), delta) - pow(s_star / s_delta, 2.))
+
+        return acc
+
+    @DeprecationWarning #新版接口不要用这个函数
+    @staticmethod
     def get_and_update_accelerator_change_lane(vehicle, trajectory: Trajectory) -> int:
 
         a_max = vehicle.max_accel  # 最大加速度
-        v_desired = vehicle.max_v / 2 / 3.6  # 汽车行驶期望速度
+        v_desired = vehicle.max_v / 3.6  # 汽车行驶期望速度
         delta = 4  # 自由加速指数δ
         t_desired = 1.5  # 汽车安全车头时距T
         s0 = 2  # 最小安全间距
@@ -710,13 +1196,13 @@ class MotivateInterfaceImpl(MotivateInterface):
         """
 
         leader = TrafficInterface.get_leader_vehicle(vehicle.id, trajectory)
-        current_lane = SimPlatformAPI.myGetLaneID(vehicle.id)
+        current_lane = vehicle.current_lane_id
         origin_lane = trajectory.continuous_lane_id[0]
         if leader <= -1:
             if vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE and current_lane == origin_lane:
-                right_follower = SimPlatformAPI.myGetRightFollowerVehicle(vehicle.id)
-                if right_follower > 0 and TrafficInterface.two_car_distance(vehicle.id,
-                                                                            right_follower) < SimPlatformAPI.myGetVehicleLength(
+                right_follower = PanoTrafficAPI.PanoTrafficApi_GetRightFollowerVehicle(vehicle.id)
+                if right_follower > 0 and PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id,
+                                                                            right_follower) < TrafficInterface.get_vehicle_length(
                         vehicle.id) + s0:
                     v_delta = current_speed
                     s_delta = 0.1  # 这里应该是设为具体有多远，比如在目标车道上了就设为0.1，没在目标车道上就设大一点，避免车子看起来急刹车
@@ -724,9 +1210,9 @@ class MotivateInterfaceImpl(MotivateInterface):
                     acc = a_max * (1. - pow((current_speed / v_desired), delta))
                     return acc
             elif vehicle.driving_mode == DrivingMode.LEFT_CHANGING_LANE and current_lane == origin_lane:
-                left_follower = SimPlatformAPI.myGetLeftFollowerVehicle(vehicle.id)
-                if left_follower > 0 and TrafficInterface.two_car_distance(vehicle.id,
-                                                                           left_follower) < SimPlatformAPI.myGetVehicleLength(
+                left_follower = PanoTrafficAPI.PanoTrafficApi_GetLeftFollowerVehicle(vehicle.id)
+                if left_follower > 0 and PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id,
+                                                                           left_follower) < TrafficInterface.get_vehicle_length(
                         vehicle.id) + s0:
                     v_delta = current_speed
                     s_delta = 0.1
@@ -739,34 +1225,34 @@ class MotivateInterfaceImpl(MotivateInterface):
         else:
             # leader_vehicle=Dao.vehicle_dictionary[leader] 为了有主车，还是大地图的情况下，缩小范围所做
             if vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE and current_lane == origin_lane:
-                right_follower = SimPlatformAPI.myGetRightFollowerVehicle(vehicle.id)
-                if right_follower > 0 and TrafficInterface.two_car_distance(vehicle.id,
-                                                                            right_follower) < SimPlatformAPI.myGetVehicleLength(
+                right_follower = PanoTrafficAPI.PanoTrafficApi_GetRightFollowerVehicle(vehicle.id)
+                if right_follower > 0 and PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id,
+                                                                            right_follower) < TrafficInterface.get_vehicle_length(
                         right_follower) + s0:
                     v_delta = current_speed
                     s_delta = 0.1
                 else:
-                    v_delta = current_speed - SimPlatformAPI.myGetVehicleSpeed(leader)  # 前后车速度差绝对值
-                    s_delta = TrafficInterface.two_car_distance(vehicle.id, leader) - SimPlatformAPI.myGetVehicleLength(
+                    v_delta = current_speed - PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(leader)  # 前后车速度差绝对值
+                    s_delta = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id, leader) - TrafficInterface.get_vehicle_length(
                         leader)  # 车辆间距
             elif vehicle.driving_mode == DrivingMode.LEFT_CHANGING_LANE and current_lane == origin_lane:
-                left_follower = SimPlatformAPI.myGetLeftFollowerVehicle(vehicle.id)
-                if left_follower > 0 and TrafficInterface.two_car_distance(vehicle.id,
-                                                                           left_follower) < SimPlatformAPI.myGetVehicleLength(
+                left_follower = PanoTrafficAPI.PanoTrafficApi_GetLeftFollowerVehicle(vehicle.id)
+                if left_follower > 0 and PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id,
+                                                                           left_follower) < TrafficInterface.get_vehicle_length(
                         left_follower) + s0:
                     v_delta = current_speed
                     s_delta = 0.1
                 else:
-                    v_delta = current_speed - SimPlatformAPI.myGetVehicleSpeed(leader)  # 前后车速度差绝对值
-                    s_delta = TrafficInterface.two_car_distance(vehicle.id, leader) - SimPlatformAPI.myGetVehicleLength(
+                    v_delta = current_speed - PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(leader)  # 前后车速度差绝对值
+                    s_delta = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id, leader) - TrafficInterface.get_vehicle_length(
                         leader)  # 车辆间距
             # 车头进入了目标车道了
             else:
-                v_delta = current_speed - SimPlatformAPI.myGetVehicleSpeed(leader)  # 前后车速度差绝对值
-                s_delta = TrafficInterface.two_car_distance(vehicle.id, leader) - SimPlatformAPI.myGetVehicleLength(
+                v_delta = current_speed - PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(leader)  # 前后车速度差绝对值
+                s_delta = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id, leader) - TrafficInterface.get_vehicle_length(
                     leader)  # 车辆间距
-        # print("I'm:",vehicle.id,"leader is:",leader,"s_delta is:",s_delta)
-        # print("two_car_distance is ",TrafficInterface.two_car_distance(vehicle.id, leader),"leader length is:",myGetVehicleLength(leader))
+        # log.info("I'm:",vehicle.id,"leader is:",leader,"s_delta is:",s_delta)
+        # log.info("two_car_distance is ",PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id, leader),"leader length is:",myGetVehicleLength(leader))
         if s_delta < 0.1:
             s_delta = 0.1
         s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
@@ -775,7 +1261,155 @@ class MotivateInterfaceImpl(MotivateInterface):
 
         return acc
 
+    @classmethod
+    def get_and_update_accelerator_change_lane_new(cls,vehicle) -> int:
+        
+        normal_acc=cls.get_and_update_accelerator_normal_new(vehicle)
+
+        a_max = vehicle.max_accel  # 最大加速度
+        v_desired = vehicle.max_v / 3.6  # 汽车行驶期望速度
+        delta = 4  # 自由加速指数δ
+        t_desired = 1.5  # 汽车安全车头时距T
+        s0 = 2  # 最小安全间距
+        b_comfortable = 2  # 期望舒适减速度
+
+        current_speed = vehicle.current_speed
+        if current_speed < 0:
+            log.warning("the current_speed is lower than 0,PLS check the logic or API")
+            current_speed = 0
+
+        """
+        if current_speed < -5:
+            current_speed = -5
+            vehicle.current_speed = current_speed
+        """
+
+        #leader_info = PanoTrafficAPI.PanoTrafficApi_GetLeader(vehicle.id)  #( 前车ID, 本车与前车距离, 索引前车的类型 )
+        
+        #TODO 换道过程中，需要随时考虑如何避免前车急减速。
+        if vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE:
+
+            right_leader=PanoTrafficAPI.PanoTrafficApi_GetRightLeaderVehicle(vehicle.id)
+            right_follower=PanoTrafficAPI.PanoTrafficApi_GetRightFollowerVehicle(vehicle.id)
+
+            if right_leader >-1:
+                #Headway车距时间 = 两车车距 / 本车的车速 还未应用
+                #FCW的碰撞时间（TTC）= 两车车距 / 两车的相对车速 还未应用
+
+                s_delta = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(right_leader,vehicle.id) - TrafficInterface.get_vehicle_length(right_leader)
+                headway_time_me_to_leader = s_delta / (vehicle.current_speed+0.001)
+                v_delta=(vehicle.current_speed - PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(right_leader))
+                if v_delta==0:
+                    v_delta=0.001
+                fcs_ttc_me_to_leader = s_delta / v_delta
+
+                TrafficInterface.set_link_in_change_lane(right_follower,vehicle.id)
+
+                s_star = s0 + current_speed * t_desired + current_speed * v_delta / (2. * pow(a_max * b_comfortable, 0.5))  # 理想期望间距
+                acc = a_max * (1. - pow((current_speed / v_desired), delta) - pow(s_star / s_delta, 2.))
+                
+
+            else:
+                acc = a_max * (1. - pow((current_speed / v_desired), delta))
+                
+        
+        elif vehicle.driving_mode == DrivingMode.LEFT_CHANGING_LANE:
+
+            left_leader=PanoTrafficAPI.PanoTrafficApi_GetLeftLeaderVehicle(vehicle.id)
+            left_follower=PanoTrafficAPI.PanoTrafficApi_GetLeftFollowerVehicle(vehicle.id)
+
+            if left_leader >-1:
+                #Headway车距时间 = 两车车距 / 本车的车速
+                #FCW的碰撞时间（TTC）= 两车车距 / 两车的相对车速
+
+                s_delta = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(left_leader,vehicle.id) - TrafficInterface.get_vehicle_length(left_leader)
+                headway_time_me_to_leader = s_delta / (vehicle.current_speed+0.001)
+                v_delta=(vehicle.current_speed - PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(left_leader))
+                if v_delta==0:
+                    v_delta=0.001
+                fcs_ttc_me_to_leader = s_delta / v_delta
+
+                TrafficInterface.set_link_in_change_lane(left_follower,vehicle.id)
+
+                s_star = s0 + current_speed * t_desired + current_speed * v_delta / (2. * pow(a_max * b_comfortable, 0.5))  # 理想期望间距
+                acc = a_max * (1. - pow((current_speed / v_desired), delta) - pow(s_star / s_delta, 2.))
+                
+
+            else:
+                acc = a_max * (1. - pow((current_speed / v_desired), delta))
+                
+        return min(acc,normal_acc)
+        #TODO 目前只有changelane的接口，还无法做出丰富的换道行为，需要后续支持
+
+
+
+        current_lane = vehicle.current_lane_id
+        origin_lane = trajectory.continuous_lane_id[0]
+        if leader <= -1:
+            if vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE and current_lane == origin_lane:
+                right_follower = PanoTrafficAPI.PanoTrafficApi_GetRightFollowerVehicle(vehicle.id)
+                if right_follower > 0 and PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id,
+                                                                            right_follower) < TrafficInterface.get_vehicle_length(
+                        vehicle.id) + s0:
+                    v_delta = current_speed
+                    s_delta = 0.1  # 这里应该是设为具体有多远，比如在目标车道上了就设为0.1，没在目标车道上就设大一点，避免车子看起来急刹车
+                else:
+                    acc = a_max * (1. - pow((current_speed / v_desired), delta))
+                    return acc
+            elif vehicle.driving_mode == DrivingMode.LEFT_CHANGING_LANE and current_lane == origin_lane:
+                left_follower = PanoTrafficAPI.PanoTrafficApi_GetLeftFollowerVehicle(vehicle.id)
+                if left_follower > 0 and PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id,
+                                                                           left_follower) < TrafficInterface.get_vehicle_length(
+                        vehicle.id) + s0:
+                    v_delta = current_speed
+                    s_delta = 0.1
+                else:
+                    acc = a_max * (1. - pow((current_speed / v_desired), delta))
+                    return acc
+            else:
+                acc = a_max * (1. - pow((current_speed / v_desired), delta))
+                return acc
+        else:
+            # leader_vehicle=Dao.vehicle_dictionary[leader] 为了有主车，还是大地图的情况下，缩小范围所做
+            if vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE and current_lane == origin_lane:
+                right_follower = PanoTrafficAPI.PanoTrafficApi_GetRightFollowerVehicle(vehicle.id)
+                if right_follower > 0 and PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id,
+                                                                            right_follower) < TrafficInterface.get_vehicle_length(
+                        right_follower) + s0:
+                    v_delta = current_speed
+                    s_delta = 0.1
+                else:
+                    v_delta = current_speed - PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(leader)  # 前后车速度差绝对值
+                    s_delta = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id, leader) - TrafficInterface.get_vehicle_length(
+                        leader)  # 车辆间距
+            elif vehicle.driving_mode == DrivingMode.LEFT_CHANGING_LANE and current_lane == origin_lane:
+                left_follower = PanoTrafficAPI.PanoTrafficApi_GetLeftFollowerVehicle(vehicle.id)
+                if left_follower > 0 and PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id,
+                                                                           left_follower) < TrafficInterface.get_vehicle_length(
+                        left_follower) + s0:
+                    v_delta = current_speed
+                    s_delta = 0.1
+                else:
+                    v_delta = current_speed - PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(leader)  # 前后车速度差绝对值
+                    s_delta = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id, leader) - TrafficInterface.get_vehicle_length(
+                        leader)  # 车辆间距
+            # 车头进入了目标车道了
+            else:
+                v_delta = current_speed - PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(leader)  # 前后车速度差绝对值
+                s_delta = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id, leader) - TrafficInterface.get_vehicle_length(
+                    leader)  # 车辆间距
+        # log.info("I'm:",vehicle.id,"leader is:",leader,"s_delta is:",s_delta)
+        # log.info("two_car_distance is ",PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id, leader),"leader length is:",myGetVehicleLength(leader))
+        if s_delta < 0.1:
+            s_delta = 0.1
+        s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
+                2. * pow(a_max * b_comfortable, 0.5))  # 理想期望间距
+        acc = a_max * (1. - pow((current_speed / v_desired), delta) - pow(s_star / s_delta, 2.))
+
+        return acc
+        
     # 临近路口或者车头前脸在路口内，又没有敌对车时的情况下。计算加速度
+    @DeprecationWarning
     @staticmethod
     def get_and_update_accelerator_normal_internal(vehicle: Vehicle, trajectory: Trajectory) -> float:
         """private方法，返回idm跟驰模型下的加速度"""
@@ -800,16 +1434,16 @@ class MotivateInterfaceImpl(MotivateInterface):
             vehicle.current_speed = current_speed
         """
 
-        current_s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)  # 当前离起始点的距离
+        current_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)  # 当前离起始点的距离
         # current_x = myGetVehicleX(vehicle.id) # 当前x坐标
 
         leader = TrafficInterface.get_leader_vehicle(vehicle.id, trajectory)
-        # leader = SimPlatformAPI.myGetLeaderVehicle(vehicle.id)
+        # leader = PanoTrafficAPI.PanoTrafficApi_GetLeaderVehicleInLane(vehicle.id)
 
         """以下是IDM模型公式计算"""
 
         if leader < -1 or leader == vehicle.id:  # invalid，前方无路,等于自己 是因为即将跨越停止线的瞬间，Pano提供的API返回的当前路和trajectory中记录的不一样，导致后续取前车取到了自己
-            # print(str(vehicle.id) + "前方无路")
+            # log.info(str(vehicle.id) + "前方无路")
             acc = a_max * (1. - pow((current_speed / v_desired), delta))
         else:
             if leader == -1:  # 前方无车
@@ -818,16 +1452,16 @@ class MotivateInterfaceImpl(MotivateInterface):
                 try:  # 主车存在的情况下，超出接管范围的车不在dao中，如果出现key error，就用pano接口获取前车速度
                     leader_vehicle = Dao.vehicle_dictionary[leader]
                 except:
-                    s_delta = TrafficInterface.two_car_distance(vehicle.id, leader) - SimPlatformAPI.myGetVehicleLength(
+                    s_delta = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id, leader) - TrafficInterface.get_vehicle_length(
                         leader)  # 车辆间距
                     if s_delta < 0:
                         s_delta = 0.001
-                    v_delta = current_speed - SimPlatformAPI.myGetVehicleSpeed(leader)  # 前后车速度差绝对值
+                    v_delta = current_speed - PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(leader)  # 前后车速度差绝对值
                     s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
                                 2. * pow(a_max * b_comfortable, 0.5))  # 理想期望间距
                     acc = a_max * (1. - pow((current_speed / v_desired), delta) - pow(s_star / s_delta, 2.))
                 else:
-                    s_delta = TrafficInterface.two_car_distance(vehicle.id, leader) - SimPlatformAPI.myGetVehicleLength(
+                    s_delta = PanoTrafficAPI.PanoTrafficApi_GetLongitudinalDistance(vehicle.id, leader) - TrafficInterface.get_vehicle_length(
                         leader)  # 车辆间距
                     if s_delta < 0:
                         s_delta = 0.001
@@ -838,32 +1472,82 @@ class MotivateInterfaceImpl(MotivateInterface):
 
         return acc
 
+    @staticmethod
+    def get_and_update_accelerator_normal_internal_new(vehicle: Vehicle) -> float:
+        """private方法，返回idm跟驰模型下的加速度"""
+        # a_max = 2  # 最大加速度
+        # v_desired = 70 / 3.6  # 汽车行驶期望速度
+        a_max = vehicle.a_max  # 最大加速度
+        v_desired = vehicle.v_desired  # 汽车行驶期望速度 ,路口内要够慢
+        delta = vehicle.delta  # 自由加速指数δ
+        t_desired = vehicle.t_desired  # 汽车安全车头时距T
+        s0 = vehicle.s0  # 最小安全间距
+        b_comfortable = vehicle.b_comfortable  # 期望舒适减速度
+
+        # current_speed = vehicle.current_speed  # 当前车速
+        current_speed = vehicle.current_speed
+        if current_speed < 0:
+            log.warning("the current_speed is lower than 0,PLS check the logic or API")
+            current_speed = 0
+
+        """
+        if current_speed < -5:
+            current_speed = -5
+            vehicle.current_speed = current_speed
+        """
+
+        current_s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)  # 当前离起始点的距离
+        # current_x = myGetVehicleX(vehicle.id) # 当前x坐标
+
+        #leader = TrafficInterface.get_leader_vehicle(vehicle.id, trajectory)
+        leader_info = PanoTrafficAPI.PanoTrafficApi_GetLeader(vehicle.id) #tuple[Any,Any,Any]
+
+        """以下是IDM模型公式计算"""
+
+        if leader_info[0] <= -1:
+            # log.info(str(vehicle.id) + "前方无路")
+            acc = a_max * (1. - pow((current_speed / v_desired), delta))
+        else:
+            s_delta = leader_info[1]  # 车辆间距
+            if s_delta < 0:
+                s_delta = 0.001
+            v_delta = current_speed - PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(leader_info[0])  # 前后车速度差绝对值
+            s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
+                        2. * pow(a_max * b_comfortable, 0.5))  # 理想期望间距
+            acc = a_max * (1. - pow((current_speed / v_desired), delta) - pow(s_star / s_delta, 2.))
+                
+            # 目前没有使用这个特性，主车存在的情况下，超出接管范围的车不在dao中，如果出现key error，就用pano接口获取前车速度
+                
+
+        return acc
+
     # 废弃
     # @staticmethod
     # def get_and_update_accelerator_internal(vehicle: Vehicle, for_car_id: int) -> int:
-    #     foeDisToEnd = SimPlatformAPI.myGetDistanceToLaneEnd(for_car_id)
-    #     myDisToEnd = SimPlatformAPI.myGetDistanceToLaneEnd(vehicle.id)
+    #     foeDisToEnd = PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(for_car_id)
+    #     myDisToEnd = PanoTrafficAPI.PanoTrafficApi_GetDistanceToLaneEnd(vehicle.id)
     #     foeArrivalTime = 0
     #     acc = 0
-    #     if SimPlatformAPI.myGetVehicleSpeed(for_car_id) < 0.1:  # todo: 这里未来还需要考虑一下交通灯
+    #     if PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(for_car_id) < 0.1:  # todo: 这里未来还需要考虑一下交通灯
     #         vehicle.set_speed(0)
-    #         # myDebugPrint(id, "StopByFoe")
+    #         # myDebuglog.info(id, "StopByFoe")
     #     else:
     #         foeArrivalTime = foeDisToEnd / myGetVehicleSpeed(for_car_id)
-    #         foeLeaveTime = (foeDisToEnd + SimPlatformAPI.myGetVehicleLength(
-    #             for_car_id) * 2 + 2) / SimPlatformAPI.myGetVehicleSpeed(for_car_id) + 1  # todo: *2, +2(s0), +1是做些保留
+    #         foeLeaveTime = (foeDisToEnd + TrafficInterface.get_vehicle_length(
+    #             for_car_id) * 2 + 2) / PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(for_car_id) + 1  # todo: *2, +2(s0), +1是做些保留
     #         acc = 2 * (myDisToEnd - vehicle.current_speed * foeLeaveTime) / (foeLeaveTime * foeLeaveTime)
     #
     #     vehicle.set_acceleration(acc)
     #     return acc
 
     # 车头前脸在路口内部，有敌对车的情况。车头前脸在停止线内，有敌对车的情况。暂时未使用
+    @DeprecationWarning
     @classmethod
     def get_and_update_accelerator_internal(cls, vehicle: Vehicle, trajectory: Trajectory, dis_to_intersection: float,
                                             foe_vehicle: Vehicle, foe_dis_to_intersection: float,
                                             foe_car_block_road: bool) -> float:
 
-        # my_vehicle_length = SimPlatformAPI.myGetVehicleLength(vehicle.id)
+        # my_vehicle_length = TrafficInterface.get_vehicle_length(vehicle.id)
         normal_acc = cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
         if foe_car_block_road:
             """private方法，返回idm跟驰模型下的加速度"""
@@ -897,13 +1581,107 @@ class MotivateInterfaceImpl(MotivateInterface):
         if my_speed <= 0:
             my_spend_time = 10000
         else:
-            my_spend_time = (dis_to_intersection + SimPlatformAPI.myGetVehicleLength(foe_vehicle.id)) / my_speed
-        # foe_vehicle_length = SimPlatformAPI.myGetVehicleLength(foe_vehicle.id)
+            my_spend_time = (dis_to_intersection + TrafficInterface.get_vehicle_length(foe_vehicle.id)) / my_speed
+        # foe_vehicle_length = TrafficInterface.get_vehicle_length(foe_vehicle.id)
         foe_speed = foe_vehicle.current_speed
         if foe_speed <= 0:
             foe_spend_time = 9999
         else:
-            foe_spend_time = (foe_dis_to_intersection + SimPlatformAPI.myGetVehicleLength(foe_vehicle.id)) / foe_speed
+            foe_spend_time = (foe_dis_to_intersection + TrafficInterface.get_vehicle_length(foe_vehicle.id)) / foe_speed
+        if my_spend_time <= foe_spend_time:
+            # acc = 2*(dis_to_intersection)/(foe_spend_time*foe_spend_time)
+            """private方法，返回idm跟驰模型下的加速度"""
+            a_max = vehicle.max_accel  # 最大加速度
+            v_desired = 40 / 3.6  # 汽车行驶期望速度 ,路口内要够慢
+            delta = 4  # 自由加速指数δ
+            current_speed = vehicle.current_speed
+            if current_speed < 0:
+                log.warning("the current_speed is lower than 0,PLS check the logic or API")
+                current_speed = 0
+
+            """以下是IDM模型公式计算"""
+            # 我花的时间少，我就快速通过，使用IDM模型中没有前车情况下的公式
+            acc = a_max * (1. - pow((current_speed / v_desired), delta))
+
+            if acc < normal_acc:
+                return acc
+            else:
+                return normal_acc
+        if my_spend_time > foe_spend_time:
+            """private方法，返回idm跟驰模型下的加速度"""
+            a_max = 3  # 最大加速度
+            v_desired = 20 / 3.6  # 汽车行驶期望速度 ,路口内要够慢
+            delta = 4  # 自由加速指数δ
+            t_desired = 1.5  # 汽车安全车头时距T
+            s0 = 6  # 最小安全间距
+            b_comfortable = 2  # 期望舒适减速度
+
+            current_speed = vehicle.current_speed
+            if current_speed < 0:
+                log.warning("the current_speed is lower than 0,PLS check the logic or API")
+                current_speed = 0
+
+            leader_v = 0
+            v_delta = current_speed - leader_v  # 前后车速度差绝对值
+            s_delta = dis_to_intersection  # 车辆前脸正中心到交点的距离
+            if s_delta < 0.1:
+                s_delta = 0.1
+            s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
+                    2. * pow(a_max * b_comfortable, 0.5))  # 理想期望间距
+            acc = a_max * (1. - pow((current_speed / v_desired), delta) - pow(s_star / s_delta, 2.))
+
+            if acc < normal_acc:
+                return acc
+            else:
+                return normal_acc
+
+    # 车头前脸在路口内部，有敌对车的情况。车头前脸在停止线内，有敌对车的情况。暂时未使用
+    @classmethod
+    def get_and_update_accelerator_internal_new(cls, vehicle: Vehicle, dis_to_intersection: float,
+                                            foe_vehicle: Vehicle, foe_dis_to_intersection: float,
+                                            foe_car_block_road: bool) -> float:
+
+        # my_vehicle_length = TrafficInterface.get_vehicle_length(vehicle.id)
+        normal_acc = cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
+        if foe_car_block_road:
+            """private方法，返回idm跟驰模型下的加速度"""
+            a_max = vehicle.max_accel  # 最大加速度
+            v_desired = vehicle.max_v / 1.5 / 3.6  # 汽车行驶期望速度 ,路口内要够慢
+            delta = 4  # 自由加速指数δ
+            t_desired = 1.5  # 汽车安全车头时距T
+            s0 = 6  # 最小安全间距
+            b_comfortable = 2  # 期望舒适减速度
+
+            current_speed = vehicle.current_speed
+            if current_speed < 0:
+                log.warning("the current_speed is lower than 0,PLS check the logic or API")
+                current_speed = 0
+
+            leader_v = 0
+            v_delta = current_speed - leader_v  # 前后车速度差绝对值
+            s_delta = dis_to_intersection  # 车辆前脸正中心到交点的距离
+            if s_delta < 0.1:
+                s_delta = 0.1
+            s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
+                    2. * pow(a_max * b_comfortable, 0.5))  # 理想期望间距
+            acc = a_max * (1. - pow((current_speed / v_desired), delta) - pow(s_star / s_delta, 2.))
+
+            if acc < normal_acc:
+                return acc
+            else:
+                return normal_acc
+
+        my_speed = vehicle.current_speed
+        if my_speed <= 0:
+            my_spend_time = 10000
+        else:
+            my_spend_time = (dis_to_intersection + TrafficInterface.get_vehicle_length(foe_vehicle.id)) / my_speed
+        # foe_vehicle_length = TrafficInterface.get_vehicle_length(foe_vehicle.id)
+        foe_speed = foe_vehicle.current_speed
+        if foe_speed <= 0:
+            foe_spend_time = 9999
+        else:
+            foe_spend_time = (foe_dis_to_intersection + TrafficInterface.get_vehicle_length(foe_vehicle.id)) / foe_speed
         if my_spend_time <= foe_spend_time:
             # acc = 2*(dis_to_intersection)/(foe_spend_time*foe_spend_time)
             """private方法，返回idm跟驰模型下的加速度"""
@@ -957,7 +1735,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                                                         foe_vehicle: Vehicle, foe_dis_to_intersection: float,
                                                         foe_car_block_road: bool) -> float:
 
-        # my_vehicle_length = SimPlatformAPI.myGetVehicleLength(vehicle.id)
+        # my_vehicle_length = TrafficInterface.get_vehicle_length(vehicle.id)
         normal_acc = cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
         if foe_car_block_road:
             """private方法，返回idm跟驰模型下的加速度"""
@@ -975,8 +1753,8 @@ class MotivateInterfaceImpl(MotivateInterface):
 
             leader_v = 0
             v_delta = current_speed - leader_v  # 前后车速度差绝对值
-            s_delta = dis_to_intersection - SimPlatformAPI.myGetVehicleLength(
-                vehicle.id) - SimPlatformAPI.getVehicleWidth(foe_vehicle.vehicle_type) / 2 - 5  # 车辆前脸正中心到碰撞位置的距离
+            s_delta = dis_to_intersection - TrafficInterface.get_vehicle_length(
+                vehicle.id) - TrafficInterface.get_vehicle_width(foe_vehicle.id) / 2 - 5  # 车辆前脸正中心到碰撞位置的距离
             if s_delta < 0.1:
                 s_delta = 0.1
             s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
@@ -1023,8 +1801,8 @@ class MotivateInterfaceImpl(MotivateInterface):
 
             leader_v = 0
             v_delta = current_speed - leader_v  # 前后车速度差绝对值
-            s_delta = dis_to_intersection - SimPlatformAPI.getVehicleWidth(
-                foe_vehicle.vehicle_type) / 2  # 车辆前脸正中心到交点的距离
+            s_delta = dis_to_intersection - TrafficInterface.get_vehicle_width(
+                foe_vehicle.id) / 2  # 车辆前脸正中心到交点的距离
             if s_delta < 0.1:
                 s_delta = 0.1
             s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
@@ -1042,7 +1820,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                                                             foe_vehicle: Vehicle, foe_dis_to_intersection: float,
                                                             foe_car_block_road: bool) -> float:
 
-        # my_vehicle_length = SimPlatformAPI.myGetVehicleLength(vehicle.id)
+        # my_vehicle_length = TrafficInterface.get_vehicle_length(vehicle.id)
         normal_acc = cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
 
         if dis_to_intersection <= foe_dis_to_intersection:
@@ -1092,11 +1870,12 @@ class MotivateInterfaceImpl(MotivateInterface):
             else:
                 return normal_acc
 
+    @DeprecationWarning
     @classmethod
     def get_and_update_accelerator_internal_with_foe(cls, vehicle: Vehicle, trajectory: Trajectory,
-                                                     foe_vehicle: Vehicle, my_delta_s: float) -> float:
+                                                     foe_vehicle_id: int, my_delta_s: float) -> float:
 
-        # my_vehicle_length = SimPlatformAPI.myGetVehicleLength(vehicle.id)
+        # my_vehicle_length = TrafficInterface.get_vehicle_length(vehicle.id)
         normal_acc = cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
         # normal_acc=1000
         """private方法，返回idm跟驰模型下的加速度"""
@@ -1112,7 +1891,41 @@ class MotivateInterfaceImpl(MotivateInterface):
             log.warning("the current_speed is lower than 0,PLS check the logic or API")
             current_speed = 0
 
-        leader_v = foe_vehicle.current_speed
+        leader_v = PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(foe_vehicle_id) #foe_vehicle.current_speed
+        v_delta = current_speed - leader_v  # 前后车速度差绝对值
+
+        s_delta = my_delta_s
+        # if s_delta < 0.1:
+        #     s_delta = 0.1
+        s_star = s0 + current_speed * t_desired + current_speed * v_delta / (
+                2. * pow(a_max * b_comfortable, 0.5))  # 理想期望间距
+        acc = a_max * (1. - pow((current_speed / v_desired), delta) - pow(s_star / s_delta, 2.))
+
+        if acc < normal_acc:
+            return acc
+        else:
+            return normal_acc
+    
+    @classmethod
+    def get_and_update_accelerator_internal_with_foe_new(cls, vehicle: Vehicle,foe_vehicle_id: int, my_delta_s: float) -> float:
+
+        # my_vehicle_length = TrafficInterface.get_vehicle_length(vehicle.id)
+        normal_acc = cls.get_and_update_accelerator_normal_internal_new(vehicle)
+        # normal_acc=1000
+        """private方法，返回idm跟驰模型下的加速度"""
+        a_max = vehicle.a_max  # 最大加速度
+        v_desired = vehicle.v_desired  # 汽车行驶期望速度 ,路口内要够慢
+        delta = vehicle.delta  # 自由加速指数δ
+        t_desired = vehicle.t_desired  # 汽车安全车头时距T
+        s0 = vehicle.s0  # 最小安全间距
+        b_comfortable = vehicle.b_comfortable  # 期望舒适减速度
+
+        current_speed = vehicle.current_speed
+        if current_speed < 0:
+            log.warning("the current_speed is lower than 0,PLS check the logic or API")
+            current_speed = 0
+
+        leader_v = PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(foe_vehicle_id) #foe_vehicle.current_speed
         v_delta = current_speed - leader_v  # 前后车速度差绝对值
 
         s_delta = my_delta_s
@@ -1134,7 +1947,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                                                     foe_vehicle: Vehicle, foe_dis_to_intersection: float,
                                                     foe_car_block_road: bool) -> float:
 
-        # my_vehicle_length = SimPlatformAPI.myGetVehicleLength(vehicle.id)
+        # my_vehicle_length = TrafficInterface.get_vehicle_length(vehicle.id)
         normal_acc = cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
 
         my_speed = vehicle.current_speed
@@ -1142,7 +1955,7 @@ class MotivateInterfaceImpl(MotivateInterface):
             my_spend_time = 10000
         else:
             my_spend_time = (dis_to_intersection) / my_speed
-        # foe_vehicle_length = SimPlatformAPI.myGetVehicleLength(foe_vehicle.id)
+        # foe_vehicle_length = TrafficInterface.get_vehicle_length(foe_vehicle.id)
         foe_speed = foe_vehicle.current_speed
         if foe_speed <= 0:
             foe_spend_time = 9999
@@ -1197,11 +2010,10 @@ class MotivateInterfaceImpl(MotivateInterface):
 
     # 红灯的情况下
     @classmethod
-    def get_and_update_accelerator_stop_line(cls, vehicle: Vehicle, dis_to_stop_line: float,
-                                             trajectory: Trajectory) -> float:
+    def get_and_update_accelerator_stop_line_new(cls, vehicle: Vehicle, dis_to_stop_line: float,) -> float:
 
-        # original_acc=SimPlatformAPI.myGetVehicleAccel(vehicle.id)
-        normal_acc = cls.get_and_update_accelerator_normal_internal(vehicle, trajectory)
+        # original_acc=PanoTrafficAPI.PanoTrafficApi_GetVehicleAccel(vehicle.id)
+        normal_acc = cls.get_and_update_accelerator_normal_internal_new(vehicle)
 
         a_max = 3  # 最大加速度
         v_desired = vehicle.max_v / 2 / 3.6  # 汽车行驶期望速度 ,路口内要够慢
@@ -1224,7 +2036,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                 2. * pow(a_max * b_comfortable, 0.5))  # 理想期望间距
         acc = a_max * (1. - pow((current_speed / v_desired), delta) - pow(s_star / s_delta, 2.))
 
-        # print("我的前车是：", leader, "normal acc is:", normal_acc,"acc is:",acc)
+        # log.info("我的前车是：", leader, "normal acc is:", normal_acc,"acc is:",acc)
         if acc < normal_acc:
             return acc
         else:
@@ -1235,14 +2047,14 @@ class MotivateInterfaceImpl(MotivateInterface):
         """根据vehicle.driving_mode来选择路径的更新方式，默认为idm方式"""
         log.info("last time vehicle.driving_mode is:{}".format(vehicle.driving_mode))
         # 特殊逻辑，应对3车道变两车道
-        # current_lane_id = SimPlatformAPI.myGetVehicleLane(vehicle.id)
+        # current_lane_id = PanoTrafficAPI.PanoTrafficApi_GetVehicleLane(vehicle.id)
         # current_lane = Dao.lane_dictionary[current_lane_id]
 
         if vehicle.driving_mode is None:
             vehicle.set_driving_mode(DrivingMode.FOLLOW_DRIVING)
 
         # # 特殊逻辑，应对3车道变两车道
-        # elif not SimPlatformAPI.myIsDeadEnd(current_lane_id) and not current_lane.next_lane:
+        # elif not PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id) and not current_lane.next_lane:
         #     vehicle.set_driving_mode(DrivingMode.RIGHT_CHANGING_LANE)
 
         # 强制换道
@@ -1304,22 +2116,22 @@ class MotivateInterfaceImpl(MotivateInterface):
         :return:
         """
 
-        print("begin to generate_point_set_idm")
+        log.info("begin to generate_point_set_idm")
         trajectory = Dao.get_trajectory_by_id(vehicle.id)
         # 开始计算每个仿真步的坐标
         # 变量初始化
         current_lane_id = myGetLaneID(vehicle.id)
         cur_lane_max_s = TrafficInterface.myGetLaneLength(current_lane_id)
-        # cur_lane_max_s=SimPlatformAPI.myGetLaneLength(current_lane_id)
-        # print('----cur_lane_max_s_old is ', cur_lane_max_s_old, '------')
-        # print('----cur_lane_max_s is ',cur_lane_max_s,'------')
-        is_dead_end = SimPlatformAPI.myIsDeadEnd(current_lane_id)
+        # cur_lane_max_s=PanoTrafficAPI.PanoTrafficApi_GetLaneLength(current_lane_id)
+        # log.info('----cur_lane_max_s_old is ', cur_lane_max_s_old, '------')
+        # log.info('----cur_lane_max_s is ',cur_lane_max_s,'------')
+        is_dead_end = PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id)
         s = myGetDistanceFromLaneStart(vehicle.id)  # 此处减去1是因为有时候算出来的s比cur_lane_max_s还大
         if s > cur_lane_max_s:
             s = cur_lane_max_s
 
         if is_dead_end:
-            print("dead end lane s:" + str(s))
+            log.info("dead end lane s:" + str(s))
             if s < 0:
                 s = 0
 
@@ -1344,7 +2156,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                 forecast_time = forecast_time + 0.01  # 10ms仿真步
 
             if len(x_y_s_yaw_set) == 1:
-                print("len of x_y_s_yaw_set is 1")
+                log.info("len of x_y_s_yaw_set is 1")
             elif len(x_y_s_yaw_set) > 1:
                 x_y_s_yaw_set = AlgorithmInterface.getLaneShapeWithOnlyXY(sl_list)
 
@@ -1375,7 +2187,7 @@ class MotivateInterfaceImpl(MotivateInterface):
 
                     if (Dao.lane_dictionary[lane_to_go].is_dead_end == True):
                         break
-                    print('current lane to go', lane_to_go)
+                    log.info('current lane to go', lane_to_go)
                     lane_to_go = Dao.lane_dictionary[lane_to_go].next_lane[0]  # todo 后期把这里的0改成随机数
 
                     to_go_lane_max_s = TrafficInterface.myGetLaneLength(lane_to_go)
@@ -1397,14 +2209,14 @@ class MotivateInterfaceImpl(MotivateInterface):
 
         # 得到结果了
         if not x_y_s_yaw_set:
-            print('x_y_s_yaw_set is empty')
+            log.info('x_y_s_yaw_set is empty')
         else:
             trajectory.x_y_s_yaw_set = x_y_s_yaw_set
             # 把上一行生成的set中的s单独拿出老生成一个list
             trajectory.s_in_current_trajectory = []
             for item in x_y_s_yaw_set:
                 trajectory.s_in_current_trajectory.append(item[2])  # 这里的2代表 x,y,s,yaw 中s的下标
-        print("generate_point_set_idm end")
+        log.info("generate_point_set_idm end")
         return
     '''  # 陈旧的generate_point_set_idm
 
@@ -1414,10 +2226,10 @@ class MotivateInterfaceImpl(MotivateInterface):
 
         # 开始计算每个仿真步的坐标
         # 变量初始化
-        current_lane_id = SimPlatformAPI.myGetLaneID(vehicle.id)
+        current_lane_id = vehicle.current_lane_id
         cur_lane_max_s = TrafficInterface.myGetLaneLength(current_lane_id)
-        is_dead_end = SimPlatformAPI.myIsDeadEnd(current_lane_id)
-        s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
+        is_dead_end = PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane_id)
+        s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
         if s > cur_lane_max_s:
             s = cur_lane_max_s
         elif s < 0:
@@ -1463,7 +2275,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                     log.info('current lane to go {}'.format(lane_to_go))
                     lane_to_go = Dao.lane_dictionary[lane_to_go].next_lane[0]  # todo 后期把这里的0改成随机数
                     to_go_lane_max_s = TrafficInterface.myGetLaneLength(lane_to_go)
-                    # to_go_lane_max_s = SimPlatformAPI.myGetLaneLength(lane_to_go)
+                    # to_go_lane_max_s = PanoTrafficAPI.PanoTrafficApi_GetLaneLength(lane_to_go)
 
                     (x, y) = TrafficInterface.getXYFromSL(lane_to_go, s, 0)
                     if x == None or y == None:
@@ -1508,11 +2320,11 @@ class MotivateInterfaceImpl(MotivateInterface):
             connecting_flag = True
             s = trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[-1][3]
         else:
-            cur_lane_id = SimPlatformAPI.myGetLaneID(vehicle.id)
+            cur_lane_id = vehicle.current_lane_id
             connecting_flag = False
-            s = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
+            s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
         cur_lane_max_s = TrafficInterface.myGetLaneLength(cur_lane_id)
-        is_dead_end = SimPlatformAPI.myIsDeadEnd(cur_lane_id)
+        is_dead_end = PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(cur_lane_id)
         to_go_lane_max_s = cur_lane_max_s
 
         if s > cur_lane_max_s:
@@ -1529,8 +2341,9 @@ class MotivateInterfaceImpl(MotivateInterface):
         continuous_length = []
         continuous_shape = []
         route_edges = []
+        route_lanes = []
         lane_to_go = cur_lane_id
-        vehicle_length = SimPlatformAPI.myGetVehicleLength(vehicle.id)
+        vehicle_length = TrafficInterface.get_vehicle_length(vehicle.id)
         current_continuous_laneid = trajectory.continuous_lane_id
 
         # length_of_continuous_lane_id=len(trajectory.continuous_lane_id)
@@ -1546,9 +2359,11 @@ class MotivateInterfaceImpl(MotivateInterface):
         #     current_continuous_lane_id.append(myGetLaneID(vehicle.id))
 
         for i in range(0, 4):  # 准备当前道路以及其余4条lane
-            if SimPlatformAPI.API_Name=='SumoAPI' and not SimPlatformAPI.myCheckInternalLane(lane_to_go):
-                edge=SimPlatformAPI.myGetEdgeIDByLaneID(lane_to_go)
+            if SimPlatformAPI.API_Name=='SumoAPI' and not PanoTrafficAPI.PanoTrafficApi_CheckInternalLane(lane_to_go):
+                edge=PanoTrafficAPI.PanoTrafficApi_GetEdgeIDByLaneID(lane_to_go)
                 route_edges.append(edge)
+            elif SimPlatformAPI.API_Name=='PanoNewAPI':
+                route_lanes.append(lane_to_go)
             continuous_laneid.append(lane_to_go)
             continuous_length.append(TrafficInterface.myGetLaneLength(lane_to_go))
             continuous_shape.append(Dao.dicLaneShapes[lane_to_go])
@@ -1560,7 +2375,9 @@ class MotivateInterfaceImpl(MotivateInterface):
             lane_to_go = rng.choice(Dao.lane_dictionary[lane_to_go].next_lane)
 
             # if(lane_to_go=='gneE5_0'):
-            #     print('gneE5_0 shape are ',continuous_laneid_shape[lane_to_go])
+            #     log.info('gneE5_0 shape are ',continuous_laneid_shape[lane_to_go])
+
+        #计算continuous_laneid #TODO 这个是有问题的
         if connecting_flag == True:
             current_continuous_laneid.extend(continuous_laneid)
             index = current_continuous_laneid.index(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0][2])
@@ -1572,12 +2389,16 @@ class MotivateInterfaceImpl(MotivateInterface):
             current_continuous_laneid.extend(continuous_laneid)
 
         # continuous_lanes_and_length生成完毕
-        # print(vehicle.id,"continuous_laneid are: ", continuous_laneid)
-        # print(vehicle.id,"continuous_length are: ",continuous_length)
-        # print(vehicle.id,"continuous_shape are: ",continuous_shape)
+        # log.info(vehicle.id,"continuous_laneid are: ", continuous_laneid)
+        # log.info(vehicle.id,"continuous_length are: ",continuous_length)
+        # log.info(vehicle.id,"continuous_shape are: ",continuous_shape)
         log.info("this car {} going to calculate track in multithread".format(vehicle.id))
         if SimPlatformAPI.API_Name == 'SumoAPI':
-            SimPlatformAPI.mySetRoute(trajectory.VehID, route_edges)
+            PanoTrafficAPI.PanoTrafficApi_SetRoute(trajectory.VehID, route_edges)
+        elif SimPlatformAPI.API_Name == 'PanoNewAPI':
+            if not PanoTrafficAPI.PanoTrafficApi_CheckInternalLane(vehicle.current_lane_id):
+                PanoTrafficAPI.PanoTrafficApi_SetRoute(trajectory.VehID, route_lanes)
+
         MultiThreadPool.calculate_track(trajectory,
                                         connecting_flag,
                                         vehicle_length,
@@ -1590,18 +2411,24 @@ class MotivateInterfaceImpl(MotivateInterface):
                                         continuous_shape,
                                         current_continuous_laneid)
 
+    @DeprecationWarning
     @classmethod
     def pop_point_in_trajectory(cls, vehicle, trajectory,delta_T):
         """根据当前仿真步车辆的速度和在轨迹中的s找到应该更新的点,并删除过期的点"""
 
         if vehicle.is_accidental == True:
+            vehicle.going_to_update_acc = 0
+            vehicle.going_to_update_speed = 0
             return trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0]
 
-        acc=vehicle.a_dict[vehicle.next_a_index]
+        #这一段是延迟加速的逻辑，现在屏蔽了
+        # acc=vehicle.a_dict[vehicle.next_a_index]
+        #
+        # future_acc = cls.get_and_update_accelerator(vehicle, trajectory)
+        # vehicle.a_dict[vehicle.next_a_index] = future_acc
+        # vehicle.next_a_index = (vehicle.next_a_index + 1) % vehicle.a_dict.__len__()  #延迟加速度响应的模块
 
-        future_acc = cls.get_and_update_accelerator(vehicle, trajectory)
-        vehicle.next_a_index = (vehicle.next_a_index + 1) % vehicle.a_dict.__len__()
-        vehicle.a_dict[vehicle.next_a_index]=future_acc
+        acc=cls.get_and_update_accelerator(vehicle, trajectory)
 
         # if vehicle.acc_used_account < 10 and vehicle.acc_used_account > 0:
         #     acc = vehicle.current_acceleration
@@ -1617,14 +2444,16 @@ class MotivateInterfaceImpl(MotivateInterface):
 
         # vehicle.set_acceleration(acc)
         vehicle.going_to_update_acc = acc
-        # print("vehicle.current_speed is",vehicle.current_speed)
-        # print("API :vehicle.speed is", SimPlatformAPI.myGetVehicleSpeed(vehicle.id))
+        # log.info("vehicle.current_speed is",vehicle.current_speed)
+        # log.info("API :vehicle.speed is", PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(vehicle.id))
         if SimPlatformAPI.API_Name=='PanoAPI':
             dt = delta_T / 1000 #delta_T 单位ms
         elif SimPlatformAPI.API_Name=='SumoAPI':
             dt = delta_T # delta_T 单位s
         elif SimPlatformAPI.API_Name=='InteractionAPI':
             dt = delta_T / 1000
+        elif SimPlatformAPI.API_Name=='PanoNewAPI':
+            dt = delta_T
 
         result_speed = vehicle.current_speed + acc * dt
         # TODO result_speed需要有个限制，参数范围限制
@@ -1634,11 +2463,11 @@ class MotivateInterfaceImpl(MotivateInterface):
             result_speed = 120 / 3.6
         # vehicle.set_speed(result_speed)
         vehicle.going_to_update_speed = result_speed
-
+        #log.info('updating id:', vehicle.id, ' going_to_update_speed:', vehicle.going_to_update_speed)
         # 如果汽车坐标发生跳变就应该更新车辆的轨迹
         """
-        if abs(SimPlatformAPI.myGetVehicleX(vehicle.id) - trajectory.x_y_s_yaw_set[0][0]) > 20 or \
-                abs(SimPlatformAPI.myGetVehicleY(vehicle.id) - trajectory.x_y_s_yaw_set[0][0]) > 20:
+        if abs(PanoTrafficAPI.PanoTrafficApi_GetVehicleX(vehicle.id) - trajectory.x_y_s_yaw_set[0][0]) > 20 or \
+                abs(PanoTrafficAPI.PanoTrafficApi_GetVehicleY(vehicle.id) - trajectory.x_y_s_yaw_set[0][0]) > 20:
             vehicle.driving_mode_last_time_changed = True
             trajectory.delete_trajectory_data()
             return (None, None, None, None)
@@ -1656,30 +2485,192 @@ class MotivateInterfaceImpl(MotivateInterface):
             log.info('some Exception caught in get_tuple_by_linear_interpolation {}', e)
             raise e
         else:
-            # print(result[0:8])
-            # # print(pos)
-            # print("pop_point_in_trajectory index:" + str(pos))
-            # print("the len of set is:" + str(len(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set)))
+            # log.info(result[0:8])
+            # # log.info(pos)
+            # log.info("pop_point_in_trajectory index:" + str(pos))
+            # log.info("the len of set is:" + str(len(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set)))
 
             # 删除trajectory两个与轨迹相关列表中过期的值
-            if pos == 0:
-                trajectory.s_in_current_trajectory[0] = result[5]
-                trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0] = result
-            else:
-                for count in range(0, pos):
-                    trajectory.s_in_current_trajectory.popleft()
-                    trajectory.x_y_laneid_s_l_cums_cuml_yaw_set.popleft()
+            if SimPlatformAPI.API_Name!='PanoNewAPI':
+                if pos == 0:
+                    trajectory.s_in_current_trajectory[0] = result[5]
+                    trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0] = result
+                else:
+                    for count in range(0, pos):
+                        trajectory.s_in_current_trajectory.popleft()
+                        trajectory.x_y_laneid_s_l_cums_cuml_yaw_set.popleft()
 
-                trajectory.s_in_current_trajectory[0] = result[5]
-                trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0] = result
-                # #todo 这个del操作似乎相当费时间！！！！！！！！！
-                # del trajectory.s_in_current_trajectory[0:pos]
-                # del trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0:pos]
+                    trajectory.s_in_current_trajectory[0] = result[5]
+                    trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0] = result
+                    # #todo 这个del操作似乎相当费时间！！！！！！！！！
+                    # del trajectory.s_in_current_trajectory[0:pos]
+                    # del trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0:pos]
+
 
             # for i in range(0, pos):
             #     del trajectory.s_in_current_trajectory[0]
             #     del trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0]
-            # print('here')
+            # log.info('here')
+            return result[0:8]
+
+    @classmethod
+    def pop_point_in_trajectory_new(cls, vehicle,delta_T):
+        """根据当前仿真步车辆的速度和在轨迹中的s找到应该更新的点,并删除过期的点"""
+
+        if vehicle.is_accidental == True:
+            vehicle.going_to_update_acc = 0
+            vehicle.going_to_update_speed = 0
+            return
+
+        #这一段是延迟加速的逻辑，现在屏蔽了
+        # acc=vehicle.a_dict[vehicle.next_a_index]
+        #
+        # future_acc = cls.get_and_update_accelerator(vehicle, trajectory)
+        # vehicle.a_dict[vehicle.next_a_index] = future_acc
+        # vehicle.next_a_index = (vehicle.next_a_index + 1) % vehicle.a_dict.__len__()  #延迟加速度响应的模块
+
+        acc=cls.get_and_update_accelerator_new(vehicle)
+
+        # if vehicle.acc_used_account < 10 and vehicle.acc_used_account > 0:
+        #     acc = vehicle.current_acceleration
+        #     vehicle.acc_used_account += 1
+        # else:
+        #     acc = cls.get_and_update_accelerator(vehicle, trajectory)
+        #     vehicle.acc_used_account = 1
+
+        if acc < -8:
+            acc = -8
+        elif acc > 8:
+            acc = 8
+
+        # vehicle.set_acceleration(acc)
+        vehicle.going_to_update_acc = acc
+        # log.info("vehicle.current_speed is",vehicle.current_speed)
+        # log.info("API :vehicle.speed is", PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(vehicle.id))
+        dt = delta_T
+
+        result_speed = vehicle.current_speed + acc * dt
+        # TODO result_speed需要有个限制，参数范围限制
+        if result_speed < 0:
+            result_speed = 0
+        elif result_speed > 120 / 3.6:
+            result_speed = 120 / 3.6
+        # vehicle.set_speed(result_speed)
+        vehicle.going_to_update_speed = result_speed
+        #log.info('updating id:', vehicle.id, ' going_to_update_speed:', vehicle.going_to_update_speed)
+        # 如果汽车坐标发生跳变就应该更新车辆的轨迹
+        """
+        if abs(PanoTrafficAPI.PanoTrafficApi_GetVehicleX(vehicle.id) - trajectory.x_y_s_yaw_set[0][0]) > 20 or \
+                abs(PanoTrafficAPI.PanoTrafficApi_GetVehicleY(vehicle.id) - trajectory.x_y_s_yaw_set[0][0]) > 20:
+            vehicle.driving_mode_last_time_changed = True
+            trajectory.delete_trajectory_data()
+            return (None, None, None, None)
+        """
+
+        s = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id) + vehicle.going_to_update_speed * dt  # 索引0表示车辆的当前位置
+        l = 0
+        
+        return s,l
+
+    @classmethod
+    def calculate_point_and_speed(cls, vehicle,delta_T):
+        """根据上个模块得到的汽车驾驶状态和所在区域位置信息计算速度和s，l"""
+
+        if vehicle.is_accidental == True:
+            vehicle.going_to_update_acc = 0
+            vehicle.going_to_update_speed = 0
+            return 0,0 #返回纵向速度和横向速度都为0
+
+        #这一段是延迟加速的逻辑，现在屏蔽了
+        # acc=vehicle.a_dict[vehicle.next_a_index]
+        #
+        # future_acc = cls.get_and_update_accelerator(vehicle, trajectory)
+        # vehicle.a_dict[vehicle.next_a_index] = future_acc
+        # vehicle.next_a_index = (vehicle.next_a_index + 1) % vehicle.a_dict.__len__()  #延迟加速度响应的模块
+
+        acc=cls.get_and_update_accelerator(vehicle, trajectory)
+
+        # if vehicle.acc_used_account < 10 and vehicle.acc_used_account > 0:
+        #     acc = vehicle.current_acceleration
+        #     vehicle.acc_used_account += 1
+        # else:
+        #     acc = cls.get_and_update_accelerator(vehicle, trajectory)
+        #     vehicle.acc_used_account = 1
+
+        if acc < -8:
+            acc = -8
+        elif acc > 8:
+            acc = 8
+
+        # vehicle.set_acceleration(acc)
+        vehicle.going_to_update_acc = acc
+        # log.info("vehicle.current_speed is",vehicle.current_speed)
+        # log.info("API :vehicle.speed is", PanoTrafficAPI.PanoTrafficApi_GetVehicleSpeed(vehicle.id))
+        if SimPlatformAPI.API_Name=='PanoAPI':
+            dt = delta_T / 1000 #delta_T 单位ms
+        elif SimPlatformAPI.API_Name=='SumoAPI':
+            dt = delta_T # delta_T 单位s
+        elif SimPlatformAPI.API_Name=='InteractionAPI':
+            dt = delta_T / 1000
+        elif SimPlatformAPI.API_Name=='PanoNewAPI':
+            dt = delta_T
+
+        result_speed = vehicle.current_speed + acc * dt
+        # TODO result_speed需要有个限制，参数范围限制
+        if result_speed < 0:
+            result_speed = 0
+        elif result_speed > 120 / 3.6:
+            result_speed = 120 / 3.6
+        # vehicle.set_speed(result_speed)
+        vehicle.going_to_update_speed = result_speed
+        #log.info('updating id:', vehicle.id, ' going_to_update_speed:', vehicle.going_to_update_speed)
+        # 如果汽车坐标发生跳变就应该更新车辆的轨迹
+        """
+        if abs(PanoTrafficAPI.PanoTrafficApi_GetVehicleX(vehicle.id) - trajectory.x_y_s_yaw_set[0][0]) > 20 or \
+                abs(PanoTrafficAPI.PanoTrafficApi_GetVehicleY(vehicle.id) - trajectory.x_y_s_yaw_set[0][0]) > 20:
+            vehicle.driving_mode_last_time_changed = True
+            trajectory.delete_trajectory_data()
+            return (None, None, None, None)
+        """
+
+        s = trajectory.s_in_current_trajectory[0] + vehicle.going_to_update_speed * dt  # 索引0表示车辆的当前位置
+
+        continue_lane_length = dict()
+        for item in trajectory.current_continuous_lane_id:
+            continue_lane_length[item] = TrafficInterface.myGetLaneLength(item)
+
+        try:
+            result, pos = AlgorithmInterface.get_tuple_by_linear_interpolation(trajectory, s, continue_lane_length)
+        except Exception as e:
+            log.info('some Exception caught in get_tuple_by_linear_interpolation {}', e)
+            raise e
+        else:
+            # log.info(result[0:8])
+            # # log.info(pos)
+            # log.info("pop_point_in_trajectory index:" + str(pos))
+            # log.info("the len of set is:" + str(len(trajectory.x_y_laneid_s_l_cums_cuml_yaw_set)))
+
+            # 删除trajectory两个与轨迹相关列表中过期的值
+            if SimPlatformAPI.API_Name!='PanoNewAPI':
+                if pos == 0:
+                    trajectory.s_in_current_trajectory[0] = result[5]
+                    trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0] = result
+                else:
+                    for count in range(0, pos):
+                        trajectory.s_in_current_trajectory.popleft()
+                        trajectory.x_y_laneid_s_l_cums_cuml_yaw_set.popleft()
+
+                    trajectory.s_in_current_trajectory[0] = result[5]
+                    trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0] = result
+                    # #todo 这个del操作似乎相当费时间！！！！！！！！！
+                    # del trajectory.s_in_current_trajectory[0:pos]
+                    # del trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0:pos]
+
+
+            # for i in range(0, pos):
+            #     del trajectory.s_in_current_trajectory[0]
+            #     del trajectory.x_y_laneid_s_l_cums_cuml_yaw_set[0]
+            # log.info('here')
             return result[0:8]
 
     # 换道轨迹规划
@@ -1689,9 +2680,9 @@ class MotivateInterfaceImpl(MotivateInterface):
         trajectory = Dao.get_trajectory_by_id(vehicle.id)
         # 开始计算换道轨迹每个仿真步的坐标
         # 变量初始化
-        current_lane = SimPlatformAPI.myGetLaneID(vehicle.id)
+        current_lane = vehicle.current_lane_id
         cur_lane_max_s = TrafficInterface.myGetLaneLength(current_lane)
-        s_from_lane_start = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
+        s_from_lane_start = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
         if s_from_lane_start > cur_lane_max_s:
             log.info('DistanceFromLaneStart > cur_lane_max_s')
             s_from_lane_start = cur_lane_max_s
@@ -1707,7 +2698,7 @@ class MotivateInterfaceImpl(MotivateInterface):
             while s < distance:
                 l = AlgorithmInterface.get_waypoint(s, distance, lane_width)
                 if l > 1.6:  # 如果是向左换道超过了车道线
-                    calculate_lane = SimPlatformAPI.myGetLeftLaneID(vehicle.id)
+                    calculate_lane = PanoTrafficAPI.PanoTrafficApi_GetLeftLaneId(vehicle.id)
                     l = l - lane_width
                 (x, y) = TrafficInterface.getXYFromSL(calculate_lane, s + s_from_lane_start, l)
                 if x is not None and y is not None:
@@ -1719,7 +2710,7 @@ class MotivateInterfaceImpl(MotivateInterface):
             while s < distance:
                 l = AlgorithmInterface.get_waypoint(s, distance, -1 * lane_width)
                 if l < -1.6:  # 如果是向左换道超过了车道线
-                    calculate_lane = SimPlatformAPI.myGetRightLaneID(vehicle.id)
+                    calculate_lane = PanoTrafficAPI.PanoTrafficApi_GetRightLaneId(vehicle.id)
                     l = l + lane_width
                 (x, y) = TrafficInterface.getXYFromSL(calculate_lane, s + s_from_lane_start, l)
                 if x is not None and y is not None:
@@ -1742,7 +2733,8 @@ class MotivateInterfaceImpl(MotivateInterface):
     @staticmethod
     def generate_point_set_waypoint_by_multi_thread(vehicle: Vehicle, direction, MultiThreadPool):  # todo 需要引入车型来决定换道长度
         trajectory = Dao.get_trajectory_by_id(vehicle.id)
-        trajectory.current_continuous_lane_id = []
+        trajectory.x_y_laneid_s_l_cums_cuml_yaw_set.clear()
+        trajectory.current_continuous_lane_id = [] #s是在后面删除的
         # 开始计算换道轨迹每个仿真步的坐标
         # 变量初始化
 
@@ -1754,8 +2746,8 @@ class MotivateInterfaceImpl(MotivateInterface):
         #     current_lane = myGetLaneID(vehicle.id)
         #     connecting_flag = False
         #     s_from_lane_start = myGetDistanceFromLaneStart(vehicle.id)
-        current_lane = SimPlatformAPI.myGetLaneID(vehicle.id)
-        s_from_lane_start = SimPlatformAPI.myGetDistanceFromLaneStart(vehicle.id)
+        current_lane = vehicle.current_lane_id
+        s_from_lane_start = PanoTrafficAPI.PanoTrafficApi_GetDistanceFromLaneStart(vehicle.id)
         cur_lane_max_s = TrafficInterface.myGetLaneLength(current_lane)
         if s_from_lane_start > cur_lane_max_s:
             log.info("DistanceFromLaneStart > cur_lane_max_s")
@@ -1776,7 +2768,7 @@ class MotivateInterfaceImpl(MotivateInterface):
         continuous_shape = {}
         direction_int = 0
 
-        if SimPlatformAPI.myIsDeadEnd(current_lane) or not Dao.lane_dictionary[current_lane].next_lane:
+        if PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(current_lane) or not Dao.lane_dictionary[current_lane].next_lane:
             if direction == Direction.LEFT:
                 direction_int = 1
                 # 当前路
@@ -1785,7 +2777,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                 continuous_shape[current_lane] = Dao.dicLaneShapes[current_lane]
 
                 # 左边的路
-                left_lane = SimPlatformAPI.myGetLeftLaneID(vehicle.id)
+                left_lane = PanoTrafficAPI.PanoTrafficApi_GetLeftLaneId(vehicle.id)
                 continuous_laneid["Left"].append(left_lane)
                 continuous_length[left_lane] = TrafficInterface.myGetLaneLength(left_lane)
                 continuous_shape[left_lane] = Dao.dicLaneShapes[left_lane]
@@ -1797,7 +2789,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                 continuous_length[current_lane] = TrafficInterface.myGetLaneLength(current_lane)
                 continuous_shape[current_lane] = Dao.dicLaneShapes[current_lane]
                 # 右边的路
-                right_lane = SimPlatformAPI.myGetRightLaneID(vehicle.id)
+                right_lane = PanoTrafficAPI.PanoTrafficApi_GetRightLaneId(vehicle.id)
                 continuous_laneid["Right"].append(right_lane)
                 continuous_length[right_lane] = TrafficInterface.myGetLaneLength(right_lane)
                 continuous_shape[right_lane] = Dao.dicLaneShapes[right_lane]
@@ -1805,7 +2797,7 @@ class MotivateInterfaceImpl(MotivateInterface):
         else:
             next_lane = Dao.lane_dictionary[current_lane].next_lane[0]
 
-            if SimPlatformAPI.myIsDeadEnd(next_lane):  # 下一条路才是dead_end路
+            if PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(next_lane):  # 下一条路才是dead_end路
                 if direction == Direction.LEFT:
                     direction_int = 1
                     # 当前路
@@ -1819,7 +2811,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                     continuous_shape[next_lane] = Dao.dicLaneShapes[next_lane]
 
                     # 左边的路
-                    left_lane = SimPlatformAPI.myGetLeftLaneID(vehicle.id)
+                    left_lane = PanoTrafficAPI.PanoTrafficApi_GetLeftLaneId(vehicle.id)
                     continuous_laneid["Left"].append(left_lane)
                     continuous_length[left_lane] = TrafficInterface.myGetLaneLength(left_lane)
                     continuous_shape[left_lane] = Dao.dicLaneShapes[left_lane]
@@ -1847,7 +2839,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                     continuous_shape[next_lane] = Dao.dicLaneShapes[next_lane]
 
                     # 右边的路
-                    right_lane = SimPlatformAPI.myGetRightLaneID(vehicle.id)
+                    right_lane = PanoTrafficAPI.PanoTrafficApi_GetRightLaneId(vehicle.id)
                     continuous_laneid["Right"].append(right_lane)
                     continuous_length[right_lane] = TrafficInterface.myGetLaneLength(right_lane)
                     continuous_shape[right_lane] = Dao.dicLaneShapes[right_lane]
@@ -1879,7 +2871,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                     continuous_length[next_next_lane] = TrafficInterface.myGetLaneLength(next_next_lane)
                     continuous_shape[next_next_lane] = Dao.dicLaneShapes[next_next_lane]
                     # 左边的路
-                    left_lane = SimPlatformAPI.myGetLeftLaneID(vehicle.id)
+                    left_lane = PanoTrafficAPI.PanoTrafficApi_GetLeftLaneId(vehicle.id)
                     continuous_laneid["Left"].append(left_lane)
                     continuous_length[left_lane] = TrafficInterface.myGetLaneLength(left_lane)
                     continuous_shape[left_lane] = Dao.dicLaneShapes[left_lane]
@@ -1920,7 +2912,7 @@ class MotivateInterfaceImpl(MotivateInterface):
                     continuous_length[next_next_lane] = TrafficInterface.myGetLaneLength(next_next_lane)
                     continuous_shape[next_next_lane] = Dao.dicLaneShapes[next_next_lane]
                     # 右边的路
-                    right_lane = SimPlatformAPI.myGetRightLaneID(vehicle.id)
+                    right_lane = PanoTrafficAPI.PanoTrafficApi_GetRightLaneId(vehicle.id)
                     continuous_laneid["Right"].append(right_lane)
                     continuous_length[right_lane] = TrafficInterface.myGetLaneLength(right_lane)
                     continuous_shape[right_lane] = Dao.dicLaneShapes[right_lane]
@@ -1948,7 +2940,7 @@ class MotivateInterfaceImpl(MotivateInterface):
 
         log.info("this car {} going to calculate track in multithread".format(vehicle.id))
 
-        # vehicle_length = SimPlatformAPI.myGetVehicleLength(vehicle.id)
+        # vehicle_length = TrafficInterface.get_vehicle_length(vehicle.id)
         MultiThreadPool.calculate_way_point(trajectory,
                                             s_from_lane_start,
                                             lane_width,
@@ -1964,17 +2956,17 @@ class MotivateInterfaceImpl(MotivateInterface):
     #     curLaneID = myGetLaneID(vehID)
     #     if curLaneID == "":
     #         return
-    #     if SimPlatformAPI.myIsDeadEnd(curLaneID):
+    #     if PanoTrafficAPI.PanoTrafficApi_GetIsDeadEnd(curLaneID):
     #         station = myGetDistanceFromLaneStart(vehID)
     #         # todo 下一行的条件考虑换用PanoSimTrafficAPI2.myGetDistanceToLaneEnd(vehID)<5
     #         if TrafficInterface.get_lane_length(curLaneID) - station < 5:
     #             return
     #     degYaw = yaw * 180 / math.pi
-    #     SimPlatformAPI.my_Move_To(vehID, x, y, degYaw)
+    #     PanoTrafficAPI.PanoTrafficApi__Move_To(vehID, x, y, degYaw)
 
     @classmethod
-    def move_to(cls,vehID, x, y, degYaw,lane,s,l):
+    def move_to(cls,vehID, x, y, degYaw,lane,s,l,speed):
         degYaw = degYaw * 180 / math.pi
-        SimPlatformAPI.myMoveTo(vehID, x, y, degYaw, lane, s, l)
+        PanoTrafficAPI.PanoTrafficApi_MoveTo(vehID, x, y, degYaw, lane, s, l,speed)
 
-        #SimPlatformAPI.my_Move_To(vehID, x, y, degYaw)
+        #PanoTrafficAPI.PanoTrafficApi__Move_To(vehID, x, y, degYaw)
