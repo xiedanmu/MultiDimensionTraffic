@@ -85,7 +85,6 @@ def modelInstanceUpdate(userdata,targetObjId, objectType, curTime, simStep):
     # log.info('Number of vehicles the script takes over is:',Dao.vehicle_dictionary.__len__())
     log.info("@....output here,time is:{}....@vehicle id is：{}".format(curTime,targetObjId))
 
-
     if not Dao.init_finished:
         log.warning("Dao init not finished")
         log.info("Dao init not finished")

@@ -449,8 +449,6 @@ def submit_location_data_each_HF(userdata,vehicle):
         return
 
 
-    PanoTrafficAPI.PanoTrafficApi_SetObjectAgentControl(vehicle.id, 1, 1, userdata['duration'])
-
     # log.info(f'before change speed cost:[{time.perf_counter() - time_start:.8f}s]')
 
     # before_change_speed_time=time.perf_counter()
@@ -603,7 +601,27 @@ def run_main_new(userdata, targetObjId):
 
     update_location_data_each_HF(vehicle,delta_T)
     
+    calculate_call_time_each_HF(vehicle,delta_T)
+
     submit_location_data_each_HF(userdata,vehicle)
+
+#设置每一辆车的调用周期。可以根据不同的车速-间距，和所在位置等动态设置。比如单纯的远距离跟驰工况，可以设置调用周期为500ms
+def calculate_call_time_each_HF(vehicle,delta_T):
+    #TODO 后续会将前车和冲突车的相对距离和相对速度考虑进来，但是十分建议该环节直接在计算加速度的时候设置好调用周期
+    # 或者在计算加速度的时候直接存储好相对速度和相对距离，再到这里设置调用周期
+
+    #Headway车距时间 = 两车车距 / 本车的车速
+    #FCW的碰撞时间（TTC）= 两车车距 / 两车的相对车速
+    
+    if vehicle.driving_mode == DrivingMode.LEFT_CHANGING_LANE or vehicle.driving_mode == DrivingMode.RIGHT_CHANGING_LANE:
+        PanoTrafficAPI.PanoTrafficApi_SetObjectAgentControl(vehicle.id, 1, 1, 0.01)
+        return
+    if vehicle.located_area == LocatedArea.INTERNAL:
+        PanoTrafficAPI.PanoTrafficApi_SetObjectAgentControl(vehicle.id, 1, 1, 0.01)
+    elif vehicle.located_area == LocatedArea.ADJACENT_JUNCTION_AREA:
+        PanoTrafficAPI.PanoTrafficApi_SetObjectAgentControl(vehicle.id, 1, 1, 0.05)
+    elif vehicle.located_area == LocatedArea.NORMAL:
+        PanoTrafficAPI.PanoTrafficApi_SetObjectAgentControl(vehicle.id, 1, 1, 0.5)
 
 def generate_profile_data_in_excel(userdata):
     g_listSaveProfile.append([])
